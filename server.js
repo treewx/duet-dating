@@ -8,9 +8,18 @@ const app = express();
 app.use(bodyParser.json());
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI, {
+console.log('Attempting to connect to MongoDB...');
+const mongoUri = process.env.MONGODB_URI.trim();
+console.log('MongoDB URI:', mongoUri);
+
+mongoose.connect(mongoUri, {
   useNewUrlParser: true,
   useUnifiedTopology: true
+})
+.then(() => console.log('Successfully connected to MongoDB'))
+.catch(err => {
+  console.error('MongoDB connection error:', err);
+  process.exit(1);
 });
 
 // Define schemas
@@ -136,7 +145,7 @@ function sendMessage(senderId, message) {
   });
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 }); 
