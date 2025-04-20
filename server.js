@@ -7,9 +7,14 @@ const mongoose = require('mongoose');
 const app = express();
 app.use(bodyParser.json());
 
+// Basic route for testing
+app.get('/', (req, res) => {
+  res.send('Duet Dating Bot is running!');
+});
+
 // Connect to MongoDB
 console.log('Attempting to connect to MongoDB...');
-const mongoUri = process.env.MONGODB_URI.trim();
+const mongoUri = process.env.MONGODB_URI.replace(/^"(.*)"$/, '$1').trim();
 console.log('MongoDB URI:', mongoUri);
 
 mongoose.connect(mongoUri, {
@@ -19,7 +24,8 @@ mongoose.connect(mongoUri, {
 .then(() => console.log('Successfully connected to MongoDB'))
 .catch(err => {
   console.error('MongoDB connection error:', err);
-  process.exit(1);
+  // Don't exit the process, just log the error
+  console.error('Continuing without MongoDB connection');
 });
 
 // Define schemas
