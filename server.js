@@ -14,8 +14,13 @@ app.get('/', (req, res) => {
 
 // Connect to MongoDB
 console.log('Attempting to connect to MongoDB...');
-const mongoUri = process.env.MONGODB_URI.trim();
+const mongoUri = process.env.MONGODB_URI ? process.env.MONGODB_URI.trim() : '';
 console.log('MongoDB URI:', mongoUri);
+
+if (!mongoUri) {
+  console.error('MongoDB URI is not set');
+  process.exit(1);
+}
 
 mongoose.connect(mongoUri, {
   useNewUrlParser: true,
