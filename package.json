@@ -1,0 +1,20 @@
+{
+  "name": "duet-dating",
+  "version": "1.0.0",
+  "description": "A crowd-sourced dating app for Facebook Messenger",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "body-parser": "^1.20.2",
+    "dotenv": "^16.3.1",
+    "mongoose": "^7.5.0",
+    "request": "^2.88.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+} 
