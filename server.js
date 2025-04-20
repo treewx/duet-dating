@@ -15,12 +15,7 @@ app.get('/', (req, res) => {
 // Connect to MongoDB
 console.log('Attempting to connect to MongoDB...');
 const mongoUri = process.env.MONGODB_URI.trim();
-
-// Validate MongoDB URI
-if (!mongoUri.startsWith('mongodb://') && !mongoUri.startsWith('mongodb+srv://')) {
-  console.error('Invalid MongoDB URI format');
-  process.exit(1);
-}
+console.log('MongoDB URI:', mongoUri);
 
 mongoose.connect(mongoUri, {
   useNewUrlParser: true,
@@ -29,8 +24,7 @@ mongoose.connect(mongoUri, {
 .then(() => console.log('Successfully connected to MongoDB'))
 .catch(err => {
   console.error('MongoDB connection error:', err);
-  // Don't exit the process, just log the error
-  console.error('Continuing without MongoDB connection');
+  // Continue without MongoDB for now
 });
 
 // Define schemas
@@ -58,18 +52,24 @@ const Couple = mongoose.model('Couple', coupleSchema);
 
 // Webhook verification
 app.get('/webhook', (req, res) => {
+  console.log('Received webhook verification request:', req.query);
+  
   if (req.query['hub.mode'] === 'subscribe' &&
       req.query['hub.verify_token'] === process.env.VERIFY_TOKEN) {
     console.log("Webhook verified");
     res.status(200).send(req.query['hub.challenge']);
   } else {
     console.error("Failed verification. Make sure the verify tokens match.");
+    console.error("Expected:", process.env.VERIFY_TOKEN);
+    console.error("Received:", req.query['hub.verify_token']);
     res.sendStatus(403);
   }
 });
 
 // Handle incoming messages
 app.post('/webhook', (req, res) => {
+  console.log('Received webhook event:', JSON.stringify(req.body));
+  
   if (req.body.object === 'page') {
     req.body.entry.forEach(entry => {
       entry.messaging.forEach(event => {
@@ -79,43 +79,60 @@ app.post('/webhook', (req, res) => {
       });
     });
     res.sendStatus(200);
+  } else {
+    res.sendStatus(404);
   }
 });
 
 // Handle incoming messages
 async function handleMessage(event) {
+  console.log('Handling message event:', JSON.stringify(event));
+  
   const senderId = event.sender.id;
   const message = event.message;
 
-  // Check if user exists
-  let user = await User.findOne({ facebookId: senderId });
-  
-  if (!user) {
-    // Get user profile from Facebook
-    const userProfile = await getUserProfile(senderId);
-    user = new User({
-      facebookId: senderId,
-      name: userProfile.first_name + ' ' + userProfile.last_name
-    });
-    await user.save();
+  try {
+    // Check if user exists
+    let user = await User.findOne({ facebookId: senderId });
     
-    // Send welcome message
-    sendMessage(senderId, {
-      text: `Welcome to Duet Dating, ${userProfile.first_name}! To get started, please send us a photo of yourself.`
-    });
-  } else if (message.attachments && message.attachments[0].type === 'image') {
-    // Handle photo upload
-    user.photos.push(message.attachments[0].payload.url);
-    await user.save();
-    
-    sendMessage(senderId, {
-      text: 'Great! Photo received. Would you like to be matched with someone?'
-    });
-  } else {
-    // Handle text messages
-    sendMessage(senderId, {
-      text: 'Please send a photo to get started!'
-    });
+    if (!user) {
+      // Get user profile from Facebook
+      const userProfile = await getUserProfile(senderId);
+      console.log('User profile:', userProfile);
+      
+      user = new User({
+        facebookId: senderId,
+        name: userProfile.first_name + ' ' + userProfile.last_name
+      });
+      await user.save();
+      
+      // Send welcome message
+      await sendMessage(senderId, {
+        text: `Welcome to Duet Dating, ${userProfile.first_name}! To get started, please send us a photo of yourself.`
+      });
+    } else if (message.attachments && message.attachments[0].type === 'image') {
+      // Handle photo upload
+      user.photos.push(message.attachments[0].payload.url);
+      await user.save();
+      
+      await sendMessage(senderId, {
+        text: 'Great! Photo received. Would you like to be matched with someone?'
+      });
+    } else {
+      // Handle text messages
+      await sendMessage(senderId, {
+        text: 'Please send a photo to get started!'
+      });
+    }
+  } catch (error) {
+    console.error('Error handling message:', error);
+    try {
+      await sendMessage(senderId, {
+        text: 'Sorry, there was an error processing your message. Please try again.'
+      });
+    } catch (sendError) {
+      console.error('Error sending error message:', sendError);
+    }
   }
 }
 
@@ -123,7 +140,7 @@ async function handleMessage(event) {
 function getUserProfile(senderId) {
   return new Promise((resolve, reject) => {
     request({
-      url: `https://graph.facebook.com/${senderId}`,
+      url: `https://graph.facebook.com/v18.0/${senderId}`,
       qs: {
         access_token: process.env.PAGE_ACCESS_TOKEN,
         fields: 'first_name,last_name'
@@ -131,9 +148,21 @@ function getUserProfile(senderId) {
       method: 'GET'
     }, (error, response, body) => {
       if (error) {
+        console.error('Error getting user profile:', error);
         reject(error);
       } else {
-        resolve(JSON.parse(body));
+        try {
+          const data = JSON.parse(body);
+          if (data.error) {
+            console.error('Facebook API error:', data.error);
+            reject(new Error(data.error.message));
+          } else {
+            resolve(data);
+          }
+        } catch (parseError) {
+          console.error('Error parsing user profile response:', parseError);
+          reject(parseError);
+        }
       }
     });
   });
@@ -141,18 +170,26 @@ function getUserProfile(senderId) {
 
 // Send message to user
 function sendMessage(senderId, message) {
-  request({
-    url: 'https://graph.facebook.com/v12.0/me/messages',
-    qs: { access_token: process.env.PAGE_ACCESS_TOKEN },
-    method: 'POST',
-    json: {
-      recipient: { id: senderId },
-      message: message
-    }
-  }, (error, response, body) => {
-    if (error) {
-      console.error('Error sending message:', error);
-    }
+  return new Promise((resolve, reject) => {
+    request({
+      url: 'https://graph.facebook.com/v18.0/me/messages',
+      qs: { access_token: process.env.PAGE_ACCESS_TOKEN },
+      method: 'POST',
+      json: {
+        recipient: { id: senderId },
+        message: message
+      }
+    }, (error, response, body) => {
+      if (error) {
+        console.error('Error sending message:', error);
+        reject(error);
+      } else if (body.error) {
+        console.error('Facebook API error:', body.error);
+        reject(new Error(body.error.message));
+      } else {
+        resolve(body);
+      }
+    });
   });
 }
 
