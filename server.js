@@ -14,8 +14,13 @@ app.get('/', (req, res) => {
 
 // Connect to MongoDB
 console.log('Attempting to connect to MongoDB...');
-const mongoUri = process.env.MONGODB_URI.replace(/^"(.*)"$/, '$1').trim();
-console.log('MongoDB URI:', mongoUri);
+const mongoUri = process.env.MONGODB_URI.trim();
+
+// Validate MongoDB URI
+if (!mongoUri.startsWith('mongodb://') && !mongoUri.startsWith('mongodb+srv://')) {
+  console.error('Invalid MongoDB URI format');
+  process.exit(1);
+}
 
 mongoose.connect(mongoUri, {
   useNewUrlParser: true,
