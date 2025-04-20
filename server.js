@@ -17,19 +17,20 @@ console.log('Attempting to connect to MongoDB...');
 const mongoUri = process.env.MONGODB_URI ? process.env.MONGODB_URI.trim() : '';
 console.log('MongoDB URI:', mongoUri);
 
-if (!mongoUri) {
-  console.error('MongoDB URI is not set');
-  process.exit(1);
-}
-
 mongoose.connect(mongoUri, {
   useNewUrlParser: true,
-  useUnifiedTopology: true
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+  retryWrites: true
 })
 .then(() => console.log('Successfully connected to MongoDB'))
 .catch(err => {
   console.error('MongoDB connection error:', err);
-  // Continue without MongoDB for now
+  // Log additional connection details
+  console.log('Connection details:', {
+    uri: mongoUri.replace(/mongodb\+srv:\/\/[^:]+:[^@]+@/, 'mongodb+srv://USER:PASS@'),
+    error: err.message
+  });
 });
 
 // Define schemas
