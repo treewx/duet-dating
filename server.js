@@ -373,6 +373,7 @@ async function showMatch(senderId, match) {
 async function createTestProfiles() {
   try {
     const testProfiles = [
+      // Women
       {
         name: 'Sarah Johnson',
         photo: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg',
@@ -389,6 +390,32 @@ async function createTestProfiles() {
         gender: 'woman'
       },
       {
+        name: 'Rachel Green',
+        photo: 'https://images.pexels.com/photos/733872/pexels-photo-733872.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Sofia Martinez',
+        photo: 'https://images.pexels.com/photos/1382731/pexels-photo-1382731.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Emma Thompson',
+        photo: 'https://images.pexels.com/photos/1587009/pexels-photo-1587009.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Olivia Chen',
+        photo: 'https://images.pexels.com/photos/1462637/pexels-photo-1462637.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Isabella Kim',
+        photo: 'https://images.pexels.com/photos/1542085/pexels-photo-1542085.jpeg',
+        gender: 'woman'
+      },
+      // Men
+      {
         name: 'Michael Brown',
         photo: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg',
         gender: 'man'
@@ -401,6 +428,31 @@ async function createTestProfiles() {
       {
         name: 'James Wilson',
         photo: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'Daniel Lee',
+        photo: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'Alex Rodriguez',
+        photo: 'https://images.pexels.com/photos/1680172/pexels-photo-1680172.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'William Taylor',
+        photo: 'https://images.pexels.com/photos/2182970/pexels-photo-2182970.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'Thomas Anderson',
+        photo: 'https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'Christopher Martinez',
+        photo: 'https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg',
         gender: 'man'
       }
     ];
@@ -444,9 +496,8 @@ async function createTestProfiles() {
 // Show a couple to rate
 async function showCoupleToRate(senderId) {
   try {
-    // Find a random couple that hasn't been rated much
     const couple = await Couple.findOne({
-      totalVotes: { $lt: 10 } // Less than 10 votes
+      totalVotes: { $lt: 10 }
     }).populate('user1').populate('user2');
 
     if (!couple) {
@@ -456,27 +507,29 @@ async function showCoupleToRate(senderId) {
       return;
     }
 
-    // Show the couple's photos side by side (we'll use separate messages for now)
+    // Send intro message
     await sendMessage(senderId, {
       text: `Rate this potential couple!\n${couple.user1.name} & ${couple.user2.name}`
     });
 
-    // Send first person's photo
+    // Send both photos in a generic template carousel
     await sendMessage(senderId, {
       attachment: {
-        type: "image",
+        type: "template",
         payload: {
-          url: couple.user1.photo
-        }
-      }
-    });
-
-    // Send second person's photo
-    await sendMessage(senderId, {
-      attachment: {
-        type: "image",
-        payload: {
-          url: couple.user2.photo
+          template_type: "generic",
+          elements: [
+            {
+              title: couple.user1.name,
+              image_url: couple.user1.photo,
+              subtitle: "Potential Match"
+            },
+            {
+              title: couple.user2.name,
+              image_url: couple.user2.photo,
+              subtitle: "Potential Match"
+            }
+          ]
         }
       }
     });
@@ -486,7 +539,7 @@ async function showCoupleToRate(senderId) {
       text: "Do you think they would make a cute couple? (Type 'Yes' or 'No')"
     });
 
-    // Store the current couple ID in the user's session
+    // Store the current couple ID
     const user = await User.findOne({ facebookId: senderId });
     user.currentCoupleId = couple._id;
     await user.save();
