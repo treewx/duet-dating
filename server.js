@@ -152,6 +152,8 @@ app.post('/webhook', (req, res) => {
       entry.messaging.forEach(event => {
         if (event.message) {
           handleMessage(event);
+        } else if (event.postback) {
+          handleMessage(event);  // We're using the same handler for both messages and postbacks
         }
       });
     });
@@ -161,7 +163,7 @@ app.post('/webhook', (req, res) => {
   }
 });
 
-// Add setup for persistent menu
+// Update the persistent menu setup
 app.get('/setup', async (req, res) => {
   try {
     // Set up persistent menu
@@ -187,6 +189,11 @@ app.get('/setup', async (req, res) => {
               },
               {
                 type: "postback",
+                title: "View Profile 👤",
+                payload: "VIEW_PROFILE"
+              },
+              {
+                type: "postback",
                 title: "Help ❓",
                 payload: "SHOW_HELP"
               }
@@ -206,7 +213,31 @@ app.get('/setup', async (req, res) => {
       });
     });
 
-    res.send('Persistent menu set up successfully!');
+    // Also set up get started button
+    await new Promise((resolve, reject) => {
+      request({
+        url: 'https://graph.facebook.com/v18.0/me/messenger_profile',
+        qs: { access_token: process.env.PAGE_ACCESS_TOKEN },
+        method: 'POST',
+        json: {
+          get_started: {
+            payload: "GET_STARTED"
+          }
+        }
+      }, (error, response, body) => {
+        if (error) {
+          console.error('Error setting up get started button:', error);
+          reject(error);
+        } else if (body.error) {
+          console.error('Facebook API error:', body.error);
+          reject(new Error(body.error.message));
+        } else {
+          resolve(body);
+        }
+      });
+    });
+
+    res.send('Messenger profile set up successfully!');
   } catch (error) {
     console.error('Error in setup:', error);
     res.status(500).send('Error setting up messenger profile');
