@@ -3,6 +3,8 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const request = require('request');
 const mongoose = require('mongoose');
+const sharp = require('sharp');
+const https = require('https');
 
 const app = express();
 app.use(bodyParser.json());
@@ -694,6 +696,66 @@ async function showMatch(senderId, match) {
   }
 }
 
+// Function to download image from URL
+function downloadImage(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => resolve(Buffer.concat(chunks)));
+      response.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+// Function to combine two images side by side
+async function combineImages(image1Url, image2Url) {
+  try {
+    // Download both images
+    const [image1Buffer, image2Buffer] = await Promise.all([
+      downloadImage(image1Url),
+      downloadImage(image2Url)
+    ]);
+
+    // Process first image to 400x400
+    const image1 = await sharp(image1Buffer)
+      .resize(400, 400, {
+        fit: 'cover',
+        position: 'center'
+      })
+      .toBuffer();
+
+    // Process second image to 400x400
+    const image2 = await sharp(image2Buffer)
+      .resize(400, 400, {
+        fit: 'cover',
+        position: 'center'
+      })
+      .toBuffer();
+
+    // Combine images side by side
+    const combinedImage = await sharp({
+      create: {
+        width: 800,
+        height: 400,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      }
+    })
+    .composite([
+      { input: image1, left: 0, top: 0 },
+      { input: image2, left: 400, top: 0 }
+    ])
+    .jpeg()
+    .toBuffer();
+
+    return combinedImage;
+  } catch (error) {
+    console.error('Error combining images:', error);
+    throw error;
+  }
+}
+
 // Show a couple to rate
 async function showCoupleToRate(senderId) {
   try {
@@ -732,25 +794,47 @@ async function showCoupleToRate(senderId) {
       text: `Rate this potential couple!\n${user1FirstName} & ${user2FirstName}\n\nCurrent Match Rating: ${matchPercentage}%\nTotal Votes: ${populatedCouple.statistics.totalVotes}`
     });
 
-    // Send photos in a generic template
-    await sendMessage(senderId, {
-      attachment: {
-        type: "template",
-        payload: {
-          template_type: "generic",
-          elements: [
-            {
-              title: user1FirstName,
-              image_url: populatedCouple.user1.photo
-            },
-            {
-              title: user2FirstName,
-              image_url: populatedCouple.user2.photo
-            }
-          ]
+    try {
+      // Combine the images
+      const combinedImageBuffer = await combineImages(
+        populatedCouple.user1.photo,
+        populatedCouple.user2.photo
+      );
+
+      // Convert buffer to base64
+      const base64Image = combinedImageBuffer.toString('base64');
+
+      // Send the combined image
+      await sendMessage(senderId, {
+        attachment: {
+          type: "image",
+          payload: {
+            is_reusable: true,
+            attachment_id: base64Image
+          }
         }
-      }
-    });
+      });
+    } catch (imageError) {
+      console.error('Error processing images:', imageError);
+      // Fallback to sending images separately if combination fails
+      await sendMessage(senderId, {
+        attachment: {
+          type: "image",
+          payload: {
+            url: populatedCouple.user1.photo
+          }
+        }
+      });
+
+      await sendMessage(senderId, {
+        attachment: {
+          type: "image",
+          payload: {
+            url: populatedCouple.user2.photo
+          }
+        }
+      });
+    }
 
     // Send voting options with quick replies
     await sendMessage(senderId, {
