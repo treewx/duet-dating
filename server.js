@@ -157,19 +157,25 @@ async function handleMessage(event) {
       await user.save();
       console.log('New user saved:', user);
       
-      // Send welcome message
+      // Send welcome message with photo picker
       await sendMessage(senderId, {
-        text: `Welcome to Duet Dating, ${userProfile.first_name}! To get started, please send us a photo of yourself.`
+        text: `Welcome to Duet Dating, ${userProfile.first_name}!`
       });
-    } else if (!user.photo && message.attachments && message.attachments[0].type === 'image') {
-      // Handle photo upload
-      user.photo = message.attachments[0].payload.url;
-      await user.save();
-      
-      // Ask for gender
-      await sendMessage(senderId, {
-        text: 'Great photo! Are you a man or woman? (Please reply with "man" or "woman")'
-      });
+      await sendPhotoPickerMessage(senderId);
+    } else if (!user.photo) {
+      if (message.attachments && message.attachments[0].type === 'image') {
+        // Store the photo URL
+        user.photo = message.attachments[0].payload.url;
+        await user.save();
+        
+        // Ask for gender
+        await sendMessage(senderId, {
+          text: 'Great photo! Are you a man or woman? (Please reply with "man" or "woman")'
+        });
+      } else {
+        // If no photo was sent, show the photo picker
+        await sendPhotoPickerMessage(senderId);
+      }
     } else if (!user.gender && message.text) {
       // Handle gender input
       const gender = message.text.toLowerCase();
@@ -264,9 +270,7 @@ async function handleMessage(event) {
         user.gender = undefined;
         user.lookingFor = undefined;
         await user.save();
-        await sendMessage(senderId, {
-          text: "Let's update your profile! Please send a new photo of yourself."
-        });
+        await sendPhotoPickerMessage(senderId);
       }
     } else if (message.quick_reply) {
       switch (message.quick_reply.payload) {
@@ -839,6 +843,33 @@ async function showHelp(senderId) {
     `Your votes help determine the best matches!`;
 
   await sendMessage(senderId, { text: helpText });
+}
+
+// Add new function to send photo picker message
+async function sendPhotoPickerMessage(senderId) {
+  await sendMessage(senderId, {
+    attachment: {
+      type: "template",
+      payload: {
+        template_type: "generic",
+        elements: [{
+          title: "Choose Your Profile Photo",
+          subtitle: "Select a photo from your Facebook albums",
+          image_url: "https://images.pexels.com/photos/1337825/pexels-photo-1337825.jpeg",
+          buttons: [{
+            type: "web_url",
+            url: `https://www.facebook.com/dialog/photos?app_id=${process.env.APP_ID}&redirect_uri=${encodeURIComponent(process.env.WEBHOOK_URL)}&response_type=token`,
+            title: "Select Photo",
+            webview_height_ratio: "tall"
+          }]
+        }]
+      }
+    }
+  });
+
+  await sendMessage(senderId, {
+    text: "Please select a photo from your Facebook albums. This helps ensure your profile photo is authentic!"
+  });
 }
 
 const PORT = process.env.PORT || 10000;
