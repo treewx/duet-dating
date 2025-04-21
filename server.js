@@ -248,6 +248,36 @@ async function handleMessage(event) {
       return;
     }
 
+    // Handle !createtest command
+    if (message.text && message.text.toLowerCase() === '!createtest') {
+      const testProfiles = await createTestProfiles();
+      if (testProfiles) {
+        await sendMessage(senderId, {
+          text: `Created ${testProfiles.length} test profiles and generated couples for rating!`
+        });
+        await sendMessage(senderId, {
+          text: "Would you like to start rating couples?",
+          quick_replies: [
+            {
+              content_type: "text",
+              title: "Start Rating 💘",
+              payload: "START_RATING"
+            },
+            {
+              content_type: "text",
+              title: "View Profile 👤",
+              payload: "VIEW_PROFILE"
+            }
+          ]
+        });
+      } else {
+        await sendMessage(senderId, {
+          text: "Sorry, there was an error creating the test profiles."
+        });
+      }
+      return;
+    }
+
     if (!user) {
       console.log('Creating new user...');
       const userProfile = await getUserProfile(senderId);
