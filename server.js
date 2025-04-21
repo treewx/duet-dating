@@ -17,6 +17,82 @@ app.get('/', (req, res) => {
   res.send('Duet Dating Bot is running!');
 });
 
+// Add Facebook photo picker endpoint
+app.get('/photo-picker', async (req, res) => {
+  const userId = req.query.userId;
+  if (!userId) {
+    return res.status(400).send('User ID is required');
+  }
+
+  const redirectUri = `${process.env.WEBHOOK_URL}/photo-callback`;
+  const photoPickerUrl = `https://www.facebook.com/dialog/photos?app_id=${process.env.APP_ID}`
+    + `&display=popup`
+    + `&redirect_uri=${encodeURIComponent(redirectUri)}`
+    + `&response_type=token`
+    + `&scope=user_photos`
+    + `&state=${userId}`;  // Pass userId in state parameter
+
+  res.redirect(photoPickerUrl);
+});
+
+// Update photo callback endpoint
+app.get('/photo-callback', async (req, res) => {
+  try {
+    const photoUrl = req.query.photo_url;
+    const userId = req.query.state;
+
+    if (photoUrl) {
+      const user = await User.findOne({ facebookId: userId });
+      if (user) {
+        user.photo = photoUrl;
+        await user.save();
+
+        await sendMessage(userId, {
+          text: "Great! I've updated your profile photo. Here's how it looks:"
+        });
+
+        await sendMessage(userId, {
+          attachment: {
+            type: "image",
+            payload: {
+              url: photoUrl
+            }
+          }
+        });
+
+        if (!user.gender) {
+          await sendMessage(userId, {
+            text: "Are you a man or woman?",
+            quick_replies: [
+              {
+                content_type: "text",
+                title: "Man 👨",
+                payload: "GENDER_MAN"
+              },
+              {
+                content_type: "text",
+                title: "Woman 👩",
+                payload: "GENDER_WOMAN"
+              }
+            ]
+          });
+        }
+      }
+    }
+
+    // Close the window
+    res.send(`
+      <script>
+        window.close();
+      </script>
+    `);
+
+  } catch (error) {
+    console.error('Error in photo-callback:', error);
+    res.status(500).send('Error processing photo selection');
+  }
+});
+
 // Connect to MongoDB
 console.log('Attempting to connect to MongoDB...');
 const mongoUri = process.env.MONGODB_URI ? process.env.MONGODB_URI.trim() : '';
@@ -149,11 +225,84 @@ app.post('/webhook', (req, res) => {
   
   if (req.body.object === 'page') {
     req.body.entry.forEach(entry => {
-      entry.messaging.forEach(event => {
-        if (event.message) {
-          handleMessage(event);
-        } else if (event.postback) {
-          handleMessage(event);  // We're using the same handler for both messages and postbacks
+      entry.messaging.forEach(async event => {
+        const senderId = event.sender.id;
+        
+        try {
+          let user = await User.findOne({ facebookId: senderId });
+          
+          // Handle postback events
+          if (event.postback) {
+            console.log('Processing postback:', event.postback.payload);
+            switch (event.postback.payload) {
+              case 'GET_STARTED':
+                console.log('Handling GET_STARTED for user:', senderId);
+                if (!user) {
+                  const userProfile = await getUserProfile(senderId);
+                  user = new User({
+                    facebookId: senderId,
+                    name: userProfile.first_name + ' ' + userProfile.last_name
+                  });
+                  await user.save();
+                }
+                await sendMessage(senderId, {
+                  text: `Welcome to Duet Dating! Let's set up your profile.`
+                });
+                await requestProfilePhoto(senderId);
+                break;
+                
+              case 'UPDATE_PROFILE':
+                console.log('Handling UPDATE_PROFILE for user:', senderId);
+                if (!user) {
+                  const userProfile = await getUserProfile(senderId);
+                  user = new User({
+                    facebookId: senderId,
+                    name: userProfile.first_name + ' ' + userProfile.last_name
+                  });
+                  await user.save();
+                }
+                user.photo = undefined;
+                user.gender = undefined;
+                user.lookingFor = undefined;
+                await user.save();
+                await requestProfilePhoto(senderId);
+                break;
+                
+              default:
+                await handleMessage(event);
+            }
+          }
+          // Handle quick reply events
+          else if (event.message && event.message.quick_reply) {
+            console.log('Processing quick reply:', event.message.quick_reply.payload);
+            switch (event.message.quick_reply.payload) {
+              case 'UPDATE_PROFILE':
+                console.log('Handling UPDATE_PROFILE quick reply for user:', senderId);
+                if (!user) {
+                  const userProfile = await getUserProfile(senderId);
+                  user = new User({
+                    facebookId: senderId,
+                    name: userProfile.first_name + ' ' + userProfile.last_name
+                  });
+                  await user.save();
+                }
+                user.photo = undefined;
+                user.gender = undefined;
+                user.lookingFor = undefined;
+                await user.save();
+                await requestProfilePhoto(senderId);
+                break;
+                
+              default:
+                await handleMessage(event);
+            }
+          }
+          // Handle regular messages
+          else {
+            await handleMessage(event);
+          }
+        } catch (error) {
+          console.error('Error processing webhook event:', error);
         }
       });
     });
@@ -166,81 +315,74 @@ app.post('/webhook', (req, res) => {
 // Update the persistent menu setup
 app.get('/setup', async (req, res) => {
   try {
-    // Set up persistent menu
-    await new Promise((resolve, reject) => {
-      request({
-        url: 'https://graph.facebook.com/v18.0/me/messenger_profile',
-        qs: { access_token: process.env.PAGE_ACCESS_TOKEN },
-        method: 'POST',
-        json: {
-          persistent_menu: [{
-            locale: "default",
-            composer_input_disabled: false,
-            call_to_actions: [
-              {
-                type: "postback",
-                title: "Rate Couples 💘",
-                payload: "START_RATING"
-              },
-              {
-                type: "postback",
-                title: "Update Profile 📝",
-                payload: "UPDATE_PROFILE"
-              },
-              {
-                type: "postback",
-                title: "View Profile 👤",
-                payload: "VIEW_PROFILE"
-              },
-              {
-                type: "postback",
-                title: "Help ❓",
-                payload: "SHOW_HELP"
-              }
-            ]
-          }]
-        }
-      }, (error, response, body) => {
-        if (error) {
-          console.error('Error setting up persistent menu:', error);
-          reject(error);
-        } else if (body.error) {
-          console.error('Facebook API error:', body.error);
-          reject(new Error(body.error.message));
-        } else {
-          resolve(body);
-        }
-      });
-    });
-
-    // Also set up get started button
-    await new Promise((resolve, reject) => {
-      request({
-        url: 'https://graph.facebook.com/v18.0/me/messenger_profile',
-        qs: { access_token: process.env.PAGE_ACCESS_TOKEN },
-        method: 'POST',
-        json: {
-          get_started: {
-            payload: "GET_STARTED"
+    console.log('Starting Messenger profile setup...');
+    
+    const menuConfig = {
+      persistent_menu: [{
+        locale: "default",
+        composer_input_disabled: false,
+        call_to_actions: [
+          {
+            type: "postback",
+            title: "Rate Couples 💘",
+            payload: "START_RATING"
+          },
+          {
+            type: "web_url",
+            title: "Add Facebook Photo 📸",
+            url: "https://www.facebook.com/photos",
+            webview_height_ratio: "full"
+          },
+          {
+            type: "postback",
+            title: "Update Profile 📝",
+            payload: "UPDATE_PROFILE"
+          },
+          {
+            type: "postback",
+            title: "View Profile 👤",
+            payload: "VIEW_PROFILE"
+          },
+          {
+            type: "postback",
+            title: "Help ❓",
+            payload: "SHOW_HELP"
           }
-        }
+        ]
+      }],
+      get_started: {
+        payload: "GET_STARTED"
+      }
+    };
+
+    console.log('Sending menu configuration:', JSON.stringify(menuConfig, null, 2));
+
+    // Set up both persistent menu and get started button in one call
+    await new Promise((resolve, reject) => {
+      request({
+        url: 'https://graph.facebook.com/v18.0/me/messenger_profile',
+        qs: { access_token: process.env.PAGE_ACCESS_TOKEN },
+        method: 'POST',
+        json: menuConfig
       }, (error, response, body) => {
         if (error) {
-          console.error('Error setting up get started button:', error);
+          console.error('Error setting up Messenger profile:', error);
           reject(error);
         } else if (body.error) {
           console.error('Facebook API error:', body.error);
           reject(new Error(body.error.message));
         } else {
+          console.log('Messenger profile setup response:', body);
           resolve(body);
         }
       });
     });
 
+    console.log('Messenger profile setup completed successfully');
     res.send('Messenger profile set up successfully!');
   } catch (error) {
     console.error('Error in setup:', error);
-    res.status(500).send('Error setting up messenger profile');
+    res.status(500).send('Error setting up messenger profile: ' + error.message);
   }
 });
 
@@ -257,6 +399,7 @@ async function handleMessage(event) {
     
     // Handle postback buttons
     if (postback) {
+      console.log('Received postback:', postback.payload);
       switch (postback.payload) {
         case 'START_RATING':
           await showCoupleToRate(senderId);
@@ -268,12 +411,12 @@ async function handleMessage(event) {
             user.lookingFor = undefined;
             await user.save();
           }
-          await sendMessage(senderId, {
-            text: "Please send us a photo of yourself. Make sure it's a clear photo of just you!"
-          });
+          await requestProfilePhoto(senderId);
           break;
         case 'VIEW_PROFILE':
+          console.log('Handling VIEW_PROFILE postback for user:', senderId);
           await showUserProfile(senderId);
+          console.log('Finished showing profile for user:', senderId);
           break;
         case 'SHOW_HELP':
           await showHelp(senderId);
@@ -336,8 +479,9 @@ async function handleMessage(event) {
       await user.save();
       
       await sendMessage(senderId, {
-        text: `Welcome to Duet Dating, ${userProfile.first_name}! Please send us a photo of yourself. Make sure it's a clear photo of just you!`
+        text: `Welcome to Duet Dating, ${userProfile.first_name}!`
       });
+      await requestProfilePhoto(senderId);
     } else if (!user.photo && message.attachments && message.attachments[0].type === 'image') {
       // Validate and store photo
       const photoUrl = message.attachments[0].payload.url;
@@ -376,6 +520,8 @@ async function handleMessage(event) {
           }
         ]
       });
+    } else if (!user.photo) {
+      await requestProfilePhoto(senderId);
     } else if (!user.gender && message.quick_reply && message.quick_reply.payload.startsWith('GENDER_')) {
       const gender = message.quick_reply.payload === 'GENDER_MAN' ? 'man' : 'woman';
       user.gender = gender;
@@ -433,10 +579,6 @@ async function handleMessage(event) {
           await handleVote(senderId, vote);
           break;
       }
-    } else if (!user.photo) {
-      await sendMessage(senderId, {
-        text: "Please send us a photo of yourself. Make sure it's a clear photo of just you!"
-      });
     }
   } catch (error) {
     console.error('Error handling message:', error);
@@ -843,7 +985,9 @@ async function handleVote(senderId, vote) {
 // Show user profile and stats
 async function showUserProfile(senderId) {
   try {
+    console.log('Starting showUserProfile for user:', senderId);
     const user = await User.findOne({ facebookId: senderId });
+    console.log('Found user:', user ? 'yes' : 'no');
 
     if (!user) {
       await sendMessage(senderId, {
@@ -854,6 +998,7 @@ async function showUserProfile(senderId) {
 
     // Show user's own photo first
     if (user.photo) {
+      console.log('Sending user photo');
       await sendMessage(senderId, {
         attachment: {
           type: "image",
@@ -986,29 +1131,47 @@ async function showHelp(senderId) {
   await sendMessage(senderId, { text: helpText });
 }
 
-// Add new function to send photo picker message
-async function sendPhotoPickerMessage(senderId) {
-  await sendMessage(senderId, {
-    attachment: {
-      type: "template",
-      payload: {
-        template_type: "generic",
-        elements: [{
-          title: "Choose Your Profile Photo",
-          subtitle: "Select a photo from your Facebook albums",
-          image_url: "https://images.pexels.com/photos/1337825/pexels-photo-1337825.jpeg",
-          buttons: [{
-            type: "web_url",
-            url: `https://www.facebook.com/dialog/photos?app_id=${process.env.APP_ID}&redirect_uri=${encodeURIComponent(process.env.WEBHOOK_URL)}&response_type=token`,
-            title: "Select Photo",
-            webview_height_ratio: "tall"
+// Update the photo request message
+async function requestProfilePhoto(senderId) {
+  console.log('Requesting profile photo for user:', senderId);
+  const photoDialogUrl = `https://www.facebook.com/v18.0/dialog/photos?app_id=${process.env.APP_ID}&redirect_uri=${encodeURIComponent(process.env.WEBHOOK_URL + '/photo-callback')}&display=popup`;
+  
+  console.log('Photo dialog URL:', photoDialogUrl);
+  
+  try {
+    // First send the text message
+    await sendMessage(senderId, {
+      text: "Let's add a photo to your profile! You can either:"
+    });
+    
+    // Then send the button template
+    await sendMessage(senderId, {
+      attachment: {
+        type: "template",
+        payload: {
+          template_type: "generic",
+          elements: [{
+            title: "Choose Your Profile Photo",
+            subtitle: "Select a photo from Facebook or send one directly in chat",
+            image_url: "https://images.pexels.com/photos/1337825/pexels-photo-1337825.jpeg",
+            buttons: [{
+              type: "web_url",
+              url: photoDialogUrl,
+              title: "Choose from Facebook",
+              webview_height_ratio: "tall"
+            }]
           }]
-        }]
+        }
       }
-    }
-  });
-
-  await sendMessage(senderId, {
-    text: "Please select a photo from your Facebook albums. This helps ensure your profile photo is authentic!"
-  });
+    });
+    
+    // Send follow-up instruction
+    await sendMessage(senderId, {
+      text: "Or simply send a photo directly in this chat! 📸"
+    });
+    
+    console.log('Successfully sent photo request messages');
+  } catch (error) {
+    console.error('Error sending photo request:', error);
+  }
 } 
