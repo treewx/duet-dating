@@ -43,7 +43,13 @@ const userSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   currentMatches: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   currentMatchIndex: Number,
-  currentCoupleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Couple' }
+  currentCoupleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Couple' },
+  votingHistory: [{
+    coupleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Couple' },
+    vote: String,  // 'yes', 'no', or 'skip'
+    votedAt: { type: Date, default: Date.now }
+  }],
+  totalVotes: { type: Number, default: 0 }
 });
 
 const coupleSchema = new mongoose.Schema({
@@ -51,15 +57,23 @@ const coupleSchema = new mongoose.Schema({
   user2: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   votes: [{
     userId: String,
-    vote: Boolean,
-    comment: String,  // Optional comment about why they think it's a good/bad match
-    createdAt: { type: Date, default: Date.now }
+    vote: String,  // 'yes', 'no', or 'skip'
+    votedAt: { type: Date, default: Date.now }
   }],
-  totalVotes: { type: Number, default: 0 },
-  positiveVotes: { type: Number, default: 0 },
-  matchScore: { type: Number, default: 0 },  // Calculated based on votes and compatibility
+  statistics: {
+    totalVotes: { type: Number, default: 0 },
+    yesVotes: { type: Number, default: 0 },
+    noVotes: { type: Number, default: 0 },
+    skipVotes: { type: Number, default: 0 },
+    matchPercentage: { type: Number, default: 0 }
+  },
   createdAt: { type: Date, default: Date.now }
 });
+
+coupleSchema.methods.calculateMatchPercentage = function() {
+  if (this.statistics.totalVotes === 0) return 0;
+  return Math.round((this.statistics.yesVotes / (this.statistics.yesVotes + this.statistics.noVotes)) * 100) || 0;
+};
 
 const User = mongoose.model('User', userSchema);
 const Couple = mongoose.model('Couple', coupleSchema);
@@ -206,22 +220,11 @@ async function handleMessage(event) {
     } else if (message.text && message.text.toLowerCase() === 'yes') {
       // Show a couple to rate
       await showCoupleToRate(senderId);
-    } else if (message.text && ['yes', 'no'].includes(message.text.toLowerCase())) {
-      // Handle rating
-      const user = await User.findOne({ facebookId: senderId });
-      if (user.currentCoupleId) {
-        const couple = await Couple.findById(user.currentCoupleId);
-        if (couple) {
-          couple.totalVotes += 1;
-          if (message.text.toLowerCase() === 'yes') {
-            couple.positiveVotes += 1;
-          }
-          await couple.save();
-          
-          // Show next couple
-          await showCoupleToRate(senderId);
-        }
-      }
+    } else if (message.text && ['yes', 'no', 'skip'].includes(message.text.toLowerCase())) {
+      await handleVote(senderId, message.text.toLowerCase());
+    } else if (message.quick_reply && message.quick_reply.payload.startsWith('VOTE_')) {
+      const vote = message.quick_reply.payload.split('_')[1].toLowerCase();
+      await handleVote(senderId, vote);
     } else if (message.text && ['like', 'pass'].includes(message.text.toLowerCase())) {
       // Handle voting on current match
       if (!user.currentMatches || user.currentMatchIndex === undefined) {
@@ -372,10 +375,9 @@ async function showMatch(senderId, match) {
 // Show a couple to rate
 async function showCoupleToRate(senderId) {
   try {
-    // Find a random couple that hasn't been rated much
     const couple = await Couple.aggregate([
-      { $match: { totalVotes: { $lt: 10 } } },
-      { $sample: { size: 1 } }  // Get a random couple
+      { $match: { 'statistics.totalVotes': { $lt: 50 } } },  // Show couples with fewer votes first
+      { $sample: { size: 1 } }
     ]).exec();
 
     if (!couple || couple.length === 0) {
@@ -385,7 +387,6 @@ async function showCoupleToRate(senderId) {
       return;
     }
 
-    // Populate the couple's user details
     const populatedCouple = await Couple.findById(couple[0]._id)
       .populate('user1')
       .populate('user2');
@@ -397,12 +398,15 @@ async function showCoupleToRate(senderId) {
       return;
     }
 
-    // Send intro message
+    // Calculate current match percentage
+    const matchPercentage = populatedCouple.calculateMatchPercentage();
+
+    // Send intro message with stats
     await sendMessage(senderId, {
-      text: `Rate this potential couple!\n${populatedCouple.user1.name} & ${populatedCouple.user2.name}`
+      text: `Rate this potential couple!\n${populatedCouple.user1.name} & ${populatedCouple.user2.name}\n\nCurrent Match Rating: ${matchPercentage}%\nTotal Votes: ${populatedCouple.statistics.totalVotes}`
     });
 
-    // Send first person's photo
+    // Send photos
     await sendMessage(senderId, {
       attachment: {
         type: "image",
@@ -412,7 +416,6 @@ async function showCoupleToRate(senderId) {
       }
     });
 
-    // Send second person's photo
     await sendMessage(senderId, {
       attachment: {
         type: "image",
@@ -422,9 +425,26 @@ async function showCoupleToRate(senderId) {
       }
     });
 
-    // Ask for rating
+    // Send voting options with quick replies
     await sendMessage(senderId, {
-      text: "Do you think they would make a cute couple? (Type 'Yes' or 'No')"
+      text: "Would they make a cute couple?",
+      quick_replies: [
+        {
+          content_type: "text",
+          title: "Yes! 😍",
+          payload: "VOTE_YES"
+        },
+        {
+          content_type: "text",
+          title: "No 🤔",
+          payload: "VOTE_NO"
+        },
+        {
+          content_type: "text",
+          title: "Skip ⏭️",
+          payload: "VOTE_SKIP"
+        }
+      ]
     });
 
     // Store the current couple ID
@@ -563,7 +583,13 @@ async function createTestProfiles() {
           user1: man._id,
           user2: woman._id,
           totalVotes: 0,
-          positiveVotes: 0
+          statistics: {
+            totalVotes: 0,
+            yesVotes: 0,
+            noVotes: 0,
+            skipVotes: 0,
+            matchPercentage: 0
+          }
         });
         await couple.save();
       }
@@ -573,6 +599,68 @@ async function createTestProfiles() {
   } catch (error) {
     console.error('Error creating test profiles:', error);
     return null;
+  }
+}
+
+// Update handleVote to process votes and show statistics
+async function handleVote(senderId, vote) {
+  try {
+    const user = await User.findOne({ facebookId: senderId });
+    if (!user || !user.currentCoupleId) {
+      await sendMessage(senderId, {
+        text: "No couple selected. Type 'Yes' to start rating couples."
+      });
+      return;
+    }
+
+    const couple = await Couple.findById(user.currentCoupleId);
+    if (!couple) {
+      await sendMessage(senderId, {
+        text: "Couple not found. Let's try another one."
+      });
+      return;
+    }
+
+    // Update couple statistics
+    couple.votes.push({
+      userId: senderId,
+      vote: vote
+    });
+
+    couple.statistics.totalVotes++;
+    if (vote === 'yes') couple.statistics.yesVotes++;
+    else if (vote === 'no') couple.statistics.noVotes++;
+    else if (vote === 'skip') couple.statistics.skipVotes++;
+
+    couple.statistics.matchPercentage = couple.calculateMatchPercentage();
+    await couple.save();
+
+    // Update user voting history
+    user.votingHistory.push({
+      coupleId: couple._id,
+      vote: vote
+    });
+    user.totalVotes++;
+    await user.save();
+
+    // Show vote confirmation and stats
+    let responseText = "";
+    if (vote === 'skip') {
+      responseText = "Skipped! Let's see another couple.";
+    } else {
+      responseText = `Vote recorded! This couple has a ${couple.statistics.matchPercentage}% match rating from ${couple.statistics.totalVotes} votes.`;
+    }
+    
+    await sendMessage(senderId, { text: responseText });
+
+    // Show next couple
+    await showCoupleToRate(senderId);
+
+  } catch (error) {
+    console.error('Error processing vote:', error);
+    await sendMessage(senderId, {
+      text: "Sorry, there was an error processing your vote. Please try again."
+    });
   }
 }
 
