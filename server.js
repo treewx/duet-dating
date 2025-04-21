@@ -252,6 +252,25 @@ async function handleMessage(event) {
         user.currentMatchIndex = undefined;
       }
       await user.save();
+    } else if (message.text && ['profile', 'stats', 'my profile'].includes(message.text.toLowerCase())) {
+      await showUserProfile(senderId);
+    } else if (message.text && ['help', '?'].includes(message.text.toLowerCase())) {
+      await showHelp(senderId);
+    } else if (message.quick_reply) {
+      switch (message.quick_reply.payload) {
+        case 'START_RATING':
+          await showCoupleToRate(senderId);
+          break;
+        case 'SHOW_HELP':
+          await showHelp(senderId);
+          break;
+        case 'VOTE_YES':
+        case 'VOTE_NO':
+        case 'VOTE_SKIP':
+          const vote = message.quick_reply.payload.split('_')[1].toLowerCase();
+          await handleVote(senderId, vote);
+          break;
+      }
     } else {
       // Handle other messages
       await sendMessage(senderId, {
@@ -662,6 +681,130 @@ async function handleVote(senderId, vote) {
       text: "Sorry, there was an error processing your vote. Please try again."
     });
   }
+}
+
+// Show user profile and stats
+async function showUserProfile(senderId) {
+  try {
+    const user = await User.findOne({ facebookId: senderId })
+      .populate({
+        path: 'votingHistory.coupleId',
+        populate: {
+          path: 'user1 user2',
+          select: 'name photo'
+        }
+      });
+
+    if (!user) {
+      await sendMessage(senderId, {
+        text: "Profile not found. Please send a message to get started!"
+      });
+      return;
+    }
+
+    // Basic profile info
+    let profileText = `📊 Your Profile Stats:\n`;
+    profileText += `Name: ${user.name}\n`;
+    profileText += `Total Votes: ${user.totalVotes}\n\n`;
+
+    // Get voting breakdown
+    const yesVotes = user.votingHistory.filter(v => v.vote === 'yes').length;
+    const noVotes = user.votingHistory.filter(v => v.vote === 'no').length;
+    const skipVotes = user.votingHistory.filter(v => v.vote === 'skip').length;
+
+    profileText += `Voting Breakdown:\n`;
+    profileText += `👍 Yes votes: ${yesVotes}\n`;
+    profileText += `👎 No votes: ${noVotes}\n`;
+    profileText += `⏭️ Skipped: ${skipVotes}\n\n`;
+
+    await sendMessage(senderId, { text: profileText });
+
+    // Find top rated couples user has voted on
+    const votedCouples = await Couple.find({
+      'votes.userId': senderId,
+      'statistics.totalVotes': { $gt: 0 }
+    })
+    .populate('user1 user2')
+    .sort({ 'statistics.matchPercentage': -1 })
+    .limit(3);
+
+    if (votedCouples.length > 0) {
+      await sendMessage(senderId, {
+        text: "🏆 Top Rated Couples You've Voted On:"
+      });
+
+      for (const couple of votedCouples) {
+        const userVote = couple.votes.find(v => v.userId === senderId)?.vote || 'unknown';
+        const message = `${couple.user1.name} & ${couple.user2.name}\n` +
+                       `Match Rating: ${couple.statistics.matchPercentage}%\n` +
+                       `Total Votes: ${couple.statistics.totalVotes}\n` +
+                       `Your Vote: ${userVote.toUpperCase()}`;
+        
+        await sendMessage(senderId, { text: message });
+
+        // Show couple photos
+        await sendMessage(senderId, {
+          attachment: {
+            type: "template",
+            payload: {
+              template_type: "generic",
+              elements: [
+                {
+                  title: couple.user1.name,
+                  image_url: couple.user1.photo,
+                  subtitle: "Potential Match"
+                },
+                {
+                  title: couple.user2.name,
+                  image_url: couple.user2.photo,
+                  subtitle: "Potential Match"
+                }
+              ]
+            }
+          }
+        });
+      }
+    }
+
+    // Show quick actions
+    await sendMessage(senderId, {
+      text: "What would you like to do?",
+      quick_replies: [
+        {
+          content_type: "text",
+          title: "Rate Couples 💘",
+          payload: "START_RATING"
+        },
+        {
+          content_type: "text",
+          title: "Help ❓",
+          payload: "SHOW_HELP"
+        }
+      ]
+    });
+
+  } catch (error) {
+    console.error('Error showing profile:', error);
+    await sendMessage(senderId, {
+      text: "Sorry, there was an error showing your profile. Please try again."
+    });
+  }
+}
+
+// Add help command function
+async function showHelp(senderId) {
+  const helpText = `Welcome to Duet Dating! 💘\n\n` +
+    `Commands:\n` +
+    `- Type 'Yes' to start rating couples\n` +
+    `- Type 'Profile' to see your stats\n` +
+    `- Type 'Help' to see this message\n\n` +
+    `When rating couples:\n` +
+    `👍 Yes - They'd make a cute couple\n` +
+    `👎 No - Not a good match\n` +
+    `⏭️ Skip - Not sure about this one\n\n` +
+    `Your votes help determine the best matches!`;
+
+  await sendMessage(senderId, { text: helpText });
 }
 
 const PORT = process.env.PORT || 10000;
