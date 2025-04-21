@@ -732,28 +732,29 @@ async function showCoupleToRate(senderId) {
       text: `Rate this potential couple!\n${user1FirstName} & ${user2FirstName}\n\nCurrent Match Rating: ${matchPercentage}%\nTotal Votes: ${populatedCouple.statistics.totalVotes}`
     });
 
-    // Send photos
+    // Send photos in a generic template
     await sendMessage(senderId, {
       attachment: {
-        type: "image",
+        type: "template",
         payload: {
-          url: populatedCouple.user1.photo
-        }
-      }
-    });
-
-    await sendMessage(senderId, {
-      attachment: {
-        type: "image",
-        payload: {
-          url: populatedCouple.user2.photo
+          template_type: "generic",
+          elements: [
+            {
+              title: user1FirstName,
+              image_url: populatedCouple.user1.photo
+            },
+            {
+              title: user2FirstName,
+              image_url: populatedCouple.user2.photo
+            }
+          ]
         }
       }
     });
 
     // Send voting options with quick replies
     await sendMessage(senderId, {
-      text: "Would they make a cute couple?",
+      text: "Do they have chemistry?",
       quick_replies: [
         {
           content_type: "text",
