@@ -37,9 +37,9 @@ mongoose.connect(mongoUri, {
 const userSchema = new mongoose.Schema({
   facebookId: String,
   name: String,
-  photos: [String],
-  gender: String,
-  lookingFor: String,
+  photo: String,
+  gender: String,  // "male" or "female"
+  lookingFor: String,  // "male" or "female"
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -48,13 +48,37 @@ const coupleSchema = new mongoose.Schema({
   user2: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   votes: [{
     userId: String,
-    vote: Boolean
+    vote: Boolean,
+    comment: String,  // Optional comment about why they think it's a good/bad match
+    createdAt: { type: Date, default: Date.now }
   }],
+  totalVotes: { type: Number, default: 0 },
+  positiveVotes: { type: Number, default: 0 },
+  matchScore: { type: Number, default: 0 },  // Calculated based on votes and compatibility
   createdAt: { type: Date, default: Date.now }
 });
 
 const User = mongoose.model('User', userSchema);
 const Couple = mongoose.model('Couple', coupleSchema);
+
+// Add this route before the webhook routes
+app.get('/clear-db/:token', async (req, res) => {
+  const expectedToken = process.env.VERIFY_TOKEN; // Using the same token as webhook for simplicity
+  const providedToken = req.params.token;
+
+  if (providedToken !== expectedToken) {
+    return res.status(403).send('Invalid token');
+  }
+
+  try {
+    await User.deleteMany({});
+    await Couple.deleteMany({});
+    res.send('Database cleared successfully!');
+  } catch (error) {
+    console.error('Error clearing database:', error);
+    res.status(500).send('Error clearing database');
+  }
+});
 
 // Webhook verification
 app.get('/webhook', (req, res) => {
@@ -93,6 +117,7 @@ app.post('/webhook', (req, res) => {
 // Handle incoming messages
 async function handleMessage(event) {
   console.log('Handling message event:', JSON.stringify(event));
+  console.log('Sender ID:', event.sender.id);
   
   const senderId = event.sender.id;
   const message = event.message;
@@ -100,32 +125,74 @@ async function handleMessage(event) {
   try {
     // Check if user exists
     let user = await User.findOne({ facebookId: senderId });
+    console.log('Existing user:', user);
     
     if (!user) {
+      console.log('Creating new user...');
       // Get user profile from Facebook
       const userProfile = await getUserProfile(senderId);
-      console.log('User profile:', userProfile);
+      console.log('Facebook user profile:', userProfile);
       
       user = new User({
         facebookId: senderId,
         name: userProfile.first_name + ' ' + userProfile.last_name
       });
       await user.save();
+      console.log('New user saved:', user);
       
       // Send welcome message
       await sendMessage(senderId, {
         text: `Welcome to Duet Dating, ${userProfile.first_name}! To get started, please send us a photo of yourself.`
       });
-    } else if (message.attachments && message.attachments[0].type === 'image') {
+    } else if (!user.photo && message.attachments && message.attachments[0].type === 'image') {
       // Handle photo upload
-      user.photos.push(message.attachments[0].payload.url);
+      user.photo = message.attachments[0].payload.url;
       await user.save();
       
+      // Ask for gender
       await sendMessage(senderId, {
-        text: 'Great! Photo received. Would you like to be matched with someone?'
+        text: 'Great photo! Are you a man or woman? (Please reply with "man" or "woman")'
+      });
+    } else if (!user.gender && message.text) {
+      // Handle gender input
+      const gender = message.text.toLowerCase();
+      if (gender === 'man' || gender === 'woman') {
+        user.gender = gender;
+        await user.save();
+        
+        // Ask who they're looking for
+        await sendMessage(senderId, {
+          text: `Perfect! Are you looking to meet a man or woman? (Please reply with "man" or "woman")`
+        });
+      } else {
+        await sendMessage(senderId, {
+          text: 'Please reply with either "man" or "woman"'
+        });
+      }
+    } else if (!user.lookingFor && message.text) {
+      // Handle preference input
+      const lookingFor = message.text.toLowerCase();
+      if (lookingFor === 'man' || lookingFor === 'woman') {
+        user.lookingFor = lookingFor;
+        await user.save();
+        
+        // Send completion message
+        await sendMessage(senderId, {
+          text: `Great! Your profile is complete. We'll start showing your profile to potential matches. Want to see some potential matches now? (Yes/No)`
+        });
+      } else {
+        await sendMessage(senderId, {
+          text: 'Please reply with either "man" or "woman"'
+        });
+      }
+    } else if (message.text && message.text.toLowerCase() === 'yes') {
+      // Show potential matches
+      // TODO: Implement match showing logic
+      await sendMessage(senderId, {
+        text: 'Great! We\'ll show you some potential matches soon. Stay tuned!'
       });
     } else {
-      // Handle text messages
+      // Handle other messages
       await sendMessage(senderId, {
         text: 'Please send a photo to get started!'
       });
