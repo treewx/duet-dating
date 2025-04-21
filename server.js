@@ -7,6 +7,11 @@ const mongoose = require('mongoose');
 const app = express();
 app.use(bodyParser.json());
 
+// Add health check endpoint at the top of the routes
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
+
 // Basic route for testing
 app.get('/', (req, res) => {
   res.send('Duet Dating Bot is running!');
@@ -15,15 +20,24 @@ app.get('/', (req, res) => {
 // Connect to MongoDB
 console.log('Attempting to connect to MongoDB...');
 const mongoUri = process.env.MONGODB_URI ? process.env.MONGODB_URI.trim() : '';
-console.log('MongoDB URI:', mongoUri);
+console.log('MongoDB URI:', mongoUri.replace(/mongodb\+srv:\/\/[^:]+:[^@]+@/, 'mongodb+srv://USER:PASS@'));
 
 mongoose.connect(mongoUri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+  serverSelectionTimeoutMS: 10000, // Increase timeout to 10s
   retryWrites: true
 })
-.then(() => console.log('Successfully connected to MongoDB'))
+.then(() => {
+  console.log('Successfully connected to MongoDB');
+  
+  // Only start the server after MongoDB connection is established
+  const PORT = process.env.PORT || 10000;
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+    console.log('All systems operational!');
+  });
+})
 .catch(err => {
   console.error('MongoDB connection error:', err);
   // Log additional connection details
@@ -31,6 +45,22 @@ mongoose.connect(mongoUri, {
     uri: mongoUri.replace(/mongodb\+srv:\/\/[^:]+:[^@]+@/, 'mongodb+srv://USER:PASS@'),
     error: err.message
   });
+  // Exit the process if we can't connect to MongoDB
+  process.exit(1);
+});
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('Received SIGTERM signal. Starting graceful shutdown...');
+  mongoose.connection.close()
+    .then(() => {
+      console.log('MongoDB connection closed.');
+      process.exit(0);
+    })
+    .catch(err => {
+      console.error('Error during graceful shutdown:', err);
+      process.exit(1);
+    });
 });
 
 // Define schemas
@@ -904,9 +934,4 @@ async function sendPhotoPickerMessage(senderId) {
   await sendMessage(senderId, {
     text: "Please select a photo from your Facebook albums. This helps ensure your profile photo is authentic!"
   });
-}
-
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-}); 
+} 
