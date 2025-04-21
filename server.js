@@ -272,8 +272,24 @@ async function handleMessage(event) {
             text: "Please send us a photo of yourself. Make sure it's a clear photo of just you!"
           });
           break;
+        case 'VIEW_PROFILE':
+          await showUserProfile(senderId);
+          break;
         case 'SHOW_HELP':
           await showHelp(senderId);
+          break;
+        case 'GET_STARTED':
+          if (!user) {
+            const userProfile = await getUserProfile(senderId);
+            user = new User({
+              facebookId: senderId,
+              name: userProfile.first_name + ' ' + userProfile.last_name
+            });
+            await user.save();
+          }
+          await sendMessage(senderId, {
+            text: `Welcome to Duet Dating! Please send us a photo of yourself. Make sure it's a clear photo of just you!`
+          });
           break;
       }
       return;
