@@ -369,6 +369,77 @@ async function showMatch(senderId, match) {
   }
 }
 
+// Show a couple to rate
+async function showCoupleToRate(senderId) {
+  try {
+    // Find a random couple that hasn't been rated much
+    const couple = await Couple.aggregate([
+      { $match: { totalVotes: { $lt: 10 } } },
+      { $sample: { size: 1 } }  // Get a random couple
+    ]).exec();
+
+    if (!couple || couple.length === 0) {
+      await sendMessage(senderId, {
+        text: "No couples to rate right now. Check back later!"
+      });
+      return;
+    }
+
+    // Populate the couple's user details
+    const populatedCouple = await Couple.findById(couple[0]._id)
+      .populate('user1')
+      .populate('user2');
+
+    if (!populatedCouple) {
+      await sendMessage(senderId, {
+        text: "Error finding couple details. Please try again."
+      });
+      return;
+    }
+
+    // Send intro message
+    await sendMessage(senderId, {
+      text: `Rate this potential couple!\n${populatedCouple.user1.name} & ${populatedCouple.user2.name}`
+    });
+
+    // Send first person's photo
+    await sendMessage(senderId, {
+      attachment: {
+        type: "image",
+        payload: {
+          url: populatedCouple.user1.photo
+        }
+      }
+    });
+
+    // Send second person's photo
+    await sendMessage(senderId, {
+      attachment: {
+        type: "image",
+        payload: {
+          url: populatedCouple.user2.photo
+        }
+      }
+    });
+
+    // Ask for rating
+    await sendMessage(senderId, {
+      text: "Do you think they would make a cute couple? (Type 'Yes' or 'No')"
+    });
+
+    // Store the current couple ID
+    const user = await User.findOne({ facebookId: senderId });
+    user.currentCoupleId = populatedCouple._id;
+    await user.save();
+
+  } catch (error) {
+    console.error('Error showing couple:', error);
+    await sendMessage(senderId, {
+      text: "Sorry, there was an error showing the couple. Please try again."
+    });
+  }
+}
+
 // Create multiple test profiles
 async function createTestProfiles() {
   try {
@@ -459,26 +530,38 @@ async function createTestProfiles() {
 
     const createdProfiles = [];
     for (const profile of testProfiles) {
-      const testUser = new User({
-        facebookId: 'test_user_' + profile.name.replace(/\s/g, '_').toLowerCase() + '_' + Date.now(),
+      // Check if profile already exists
+      const existingProfile = await User.findOne({ 
         name: profile.name,
-        photo: profile.photo,
-        gender: profile.gender,
-        lookingFor: profile.gender === 'man' ? 'woman' : 'man'
+        gender: profile.gender 
       });
-      await testUser.save();
-      createdProfiles.push(testUser);
+      
+      if (!existingProfile) {
+        const testUser = new User({
+          facebookId: 'test_user_' + profile.name.replace(/\s/g, '_').toLowerCase() + '_' + Date.now(),
+          name: profile.name,
+          photo: profile.photo,
+          gender: profile.gender,
+          lookingFor: profile.gender === 'man' ? 'woman' : 'man'
+        });
+        await testUser.save();
+        createdProfiles.push(testUser);
+      }
     }
 
-    // Create some initial couples for rating
-    const men = createdProfiles.filter(p => p.gender === 'man');
-    const women = createdProfiles.filter(p => p.gender === 'woman');
+    // Create couples with random combinations
+    const men = await User.find({ gender: 'man' });
+    const women = await User.find({ gender: 'woman' });
     
-    for (let i = 0; i < men.length; i++) {
-      for (let j = 0; j < women.length; j++) {
+    // Delete existing couples
+    await Couple.deleteMany({});
+    
+    // Create new couples with random combinations
+    for (let man of men) {
+      for (let woman of women) {
         const couple = new Couple({
-          user1: men[i]._id,
-          user2: women[j]._id,
+          user1: man._id,
+          user2: woman._id,
           totalVotes: 0,
           positiveVotes: 0
         });
@@ -490,65 +573,6 @@ async function createTestProfiles() {
   } catch (error) {
     console.error('Error creating test profiles:', error);
     return null;
-  }
-}
-
-// Show a couple to rate
-async function showCoupleToRate(senderId) {
-  try {
-    const couple = await Couple.findOne({
-      totalVotes: { $lt: 10 }
-    }).populate('user1').populate('user2');
-
-    if (!couple) {
-      await sendMessage(senderId, {
-        text: "No couples to rate right now. Check back later!"
-      });
-      return;
-    }
-
-    // Send intro message
-    await sendMessage(senderId, {
-      text: `Rate this potential couple!\n${couple.user1.name} & ${couple.user2.name}`
-    });
-
-    // Send both photos in a generic template carousel
-    await sendMessage(senderId, {
-      attachment: {
-        type: "template",
-        payload: {
-          template_type: "generic",
-          elements: [
-            {
-              title: couple.user1.name,
-              image_url: couple.user1.photo,
-              subtitle: "Potential Match"
-            },
-            {
-              title: couple.user2.name,
-              image_url: couple.user2.photo,
-              subtitle: "Potential Match"
-            }
-          ]
-        }
-      }
-    });
-
-    // Ask for rating
-    await sendMessage(senderId, {
-      text: "Do you think they would make a cute couple? (Type 'Yes' or 'No')"
-    });
-
-    // Store the current couple ID
-    const user = await User.findOne({ facebookId: senderId });
-    user.currentCoupleId = couple._id;
-    await user.save();
-
-  } catch (error) {
-    console.error('Error showing couple:', error);
-    await sendMessage(senderId, {
-      text: "Sorry, there was an error showing the couple. Please try again."
-    });
   }
 }
 
