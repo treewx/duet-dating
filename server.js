@@ -790,7 +790,7 @@ async function showCoupleToRate(senderId) {
 async function createTestProfiles() {
   try {
     const testProfiles = [
-      // Women
+      // Women (16)
       {
         name: 'Sarah Johnson',
         photo: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg',
@@ -831,7 +831,47 @@ async function createTestProfiles() {
         photo: 'https://images.pexels.com/photos/1542085/pexels-photo-1542085.jpeg',
         gender: 'woman'
       },
-      // Men
+      {
+        name: 'Mia Rodriguez',
+        photo: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Ava Williams',
+        photo: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Charlotte Brown',
+        photo: 'https://images.pexels.com/photos/1065084/pexels-photo-1065084.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Amelia Taylor',
+        photo: 'https://images.pexels.com/photos/733872/pexels-photo-733872.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Harper Anderson',
+        photo: 'https://images.pexels.com/photos/1382731/pexels-photo-1382731.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Evelyn Thomas',
+        photo: 'https://images.pexels.com/photos/1587009/pexels-photo-1587009.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Abigail Moore',
+        photo: 'https://images.pexels.com/photos/1462637/pexels-photo-1462637.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Elizabeth Jackson',
+        photo: 'https://images.pexels.com/photos/1542085/pexels-photo-1542085.jpeg',
+        gender: 'woman'
+      },
+      // Men (16)
       {
         name: 'Michael Brown',
         photo: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg',
@@ -869,6 +909,46 @@ async function createTestProfiles() {
       },
       {
         name: 'Christopher Martinez',
+        photo: 'https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'Joseph Thompson',
+        photo: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'Charles White',
+        photo: 'https://images.pexels.com/photos/1516680/pexels-photo-1516680.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'Andrew Harris',
+        photo: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'Matthew Clark',
+        photo: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'Anthony Lewis',
+        photo: 'https://images.pexels.com/photos/1680172/pexels-photo-1680172.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'Robert Walker',
+        photo: 'https://images.pexels.com/photos/2182970/pexels-photo-2182970.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'John Hall',
+        photo: 'https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'Ryan Allen',
         photo: 'https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg',
         gender: 'man'
       }
