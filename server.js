@@ -40,7 +40,9 @@ const userSchema = new mongoose.Schema({
   photo: String,
   gender: String,  // "male" or "female"
   lookingFor: String,  // "male" or "female"
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  currentMatches: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  currentMatchIndex: Number
 });
 
 const coupleSchema = new mongoose.Schema({
@@ -187,10 +189,51 @@ async function handleMessage(event) {
       }
     } else if (message.text && message.text.toLowerCase() === 'yes') {
       // Show potential matches
-      // TODO: Implement match showing logic
-      await sendMessage(senderId, {
-        text: 'Great! We\'ll show you some potential matches soon. Stay tuned!'
-      });
+      const potentialMatches = await findPotentialMatches(user);
+      
+      if (potentialMatches.length === 0) {
+        await sendMessage(senderId, {
+          text: "We don't have any matches for you right now. Check back soon!"
+        });
+      } else {
+        // Show the first match
+        await sendMessage(senderId, {
+          text: "Here are some potential matches! Let's look at them one by one."
+        });
+        await showMatch(senderId, potentialMatches[0]);
+        
+        // Store matches in user document for reference
+        user.currentMatches = potentialMatches.map(match => match._id);
+        user.currentMatchIndex = 0;
+        await user.save();
+      }
+    } else if (message.text && ['like', 'pass'].includes(message.text.toLowerCase())) {
+      // Handle voting on current match
+      if (!user.currentMatches || user.currentMatchIndex === undefined) {
+        await sendMessage(senderId, {
+          text: "Would you like to see some matches? Reply with 'Yes'"
+        });
+        return;
+      }
+
+      const vote = message.text.toLowerCase() === 'like';
+      // TODO: Store the vote
+
+      // Show next match if available
+      user.currentMatchIndex++;
+      if (user.currentMatchIndex < user.currentMatches.length) {
+        const nextMatch = await User.findById(user.currentMatches[user.currentMatchIndex]);
+        if (nextMatch) {
+          await showMatch(senderId, nextMatch);
+        }
+      } else {
+        await sendMessage(senderId, {
+          text: "That's all the matches we have for now! Check back later for more."
+        });
+        user.currentMatches = undefined;
+        user.currentMatchIndex = undefined;
+      }
+      await user.save();
     } else {
       // Handle other messages
       await sendMessage(senderId, {
@@ -264,6 +307,51 @@ function sendMessage(senderId, message) {
       }
     });
   });
+}
+
+// Find potential matches for a user
+async function findPotentialMatches(user) {
+  try {
+    // Find users of the gender the current user is looking for
+    // who are also looking for users of the current user's gender
+    const potentialMatches = await User.find({
+      facebookId: { $ne: user.facebookId },  // Not the same user
+      gender: user.lookingFor,  // Matches what user is looking for
+      lookingFor: user.gender,  // Looking for user's gender
+      photo: { $exists: true }  // Has a photo
+    }).limit(5);  // Start with 5 matches max
+
+    return potentialMatches;
+  } catch (error) {
+    console.error('Error finding matches:', error);
+    return [];
+  }
+}
+
+// Show a potential match to user
+async function showMatch(senderId, match) {
+  try {
+    await sendMessage(senderId, {
+      text: `Here's someone who might be a good match!\nName: ${match.name}`
+    });
+
+    // Send the photo
+    await sendMessage(senderId, {
+      attachment: {
+        type: "image",
+        payload: {
+          url: match.photo
+        }
+      }
+    });
+
+    // Send voting options
+    await sendMessage(senderId, {
+      text: "What do you think? (Type 'Like' or 'Pass')"
+    });
+  } catch (error) {
+    console.error('Error showing match:', error);
+  }
 }
 
 const PORT = process.env.PORT || 10000;
