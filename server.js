@@ -1134,7 +1134,7 @@ async function showHelp(senderId) {
 // Update the photo request message
 async function requestProfilePhoto(senderId) {
   console.log('Requesting profile photo for user:', senderId);
-  const photoDialogUrl = `https://www.facebook.com/v18.0/dialog/photos?app_id=${process.env.APP_ID}&redirect_uri=${encodeURIComponent(process.env.WEBHOOK_URL + '/photo-callback')}&display=popup`;
+  const photoDialogUrl = `https://www.facebook.com/dialog/photos?app_id=${process.env.APP_ID}&display=popup&redirect_uri=${encodeURIComponent(process.env.WEBHOOK_URL + '/photo-callback')}`;
   
   console.log('Photo dialog URL:', photoDialogUrl);
   
@@ -1158,7 +1158,8 @@ async function requestProfilePhoto(senderId) {
               type: "web_url",
               url: photoDialogUrl,
               title: "Choose from Facebook",
-              webview_height_ratio: "tall"
+              webview_height_ratio: "tall",
+              messenger_extensions: false
             }]
           }]
         }
