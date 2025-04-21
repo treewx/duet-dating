@@ -256,6 +256,18 @@ async function handleMessage(event) {
       await showUserProfile(senderId);
     } else if (message.text && ['help', '?'].includes(message.text.toLowerCase())) {
       await showHelp(senderId);
+    } else if (message.quick_reply && message.quick_reply.payload === 'UPDATE_PROFILE') {
+      // Reset the user's profile to allow updates
+      const user = await User.findOne({ facebookId: senderId });
+      if (user) {
+        user.photo = undefined;
+        user.gender = undefined;
+        user.lookingFor = undefined;
+        await user.save();
+        await sendMessage(senderId, {
+          text: "Let's update your profile! Please send a new photo of yourself."
+        });
+      }
     } else if (message.quick_reply) {
       switch (message.quick_reply.payload) {
         case 'START_RATING':
@@ -686,14 +698,7 @@ async function handleVote(senderId, vote) {
 // Show user profile and stats
 async function showUserProfile(senderId) {
   try {
-    const user = await User.findOne({ facebookId: senderId })
-      .populate({
-        path: 'votingHistory.coupleId',
-        populate: {
-          path: 'user1 user2',
-          select: 'name photo'
-        }
-      });
+    const user = await User.findOne({ facebookId: senderId });
 
     if (!user) {
       await sendMessage(senderId, {
@@ -702,64 +707,88 @@ async function showUserProfile(senderId) {
       return;
     }
 
+    // Show user's own photo first
+    if (user.photo) {
+      await sendMessage(senderId, {
+        attachment: {
+          type: "image",
+          payload: {
+            url: user.photo
+          }
+        }
+      });
+    }
+
     // Basic profile info
-    let profileText = `📊 Your Profile Stats:\n`;
+    let profileText = `👤 Your Dating Profile:\n`;
     profileText += `Name: ${user.name}\n`;
-    profileText += `Total Votes: ${user.totalVotes}\n\n`;
+    profileText += `Gender: ${user.gender ? user.gender.charAt(0).toUpperCase() + user.gender.slice(1) : 'Not set'}\n`;
+    profileText += `Looking for: ${user.lookingFor ? user.lookingFor.charAt(0).toUpperCase() + user.lookingFor.slice(1) : 'Not set'}\n\n`;
 
-    // Get voting breakdown
-    const yesVotes = user.votingHistory.filter(v => v.vote === 'yes').length;
-    const noVotes = user.votingHistory.filter(v => v.vote === 'no').length;
-    const skipVotes = user.votingHistory.filter(v => v.vote === 'skip').length;
+    // Find how many people have rated you in couples
+    const couplesWithYou = await Couple.find({
+      $or: [
+        { user1: user._id },
+        { user2: user._id }
+      ]
+    }).populate('user1 user2');
 
-    profileText += `Voting Breakdown:\n`;
-    profileText += `👍 Yes votes: ${yesVotes}\n`;
-    profileText += `👎 No votes: ${noVotes}\n`;
-    profileText += `⏭️ Skipped: ${skipVotes}\n\n`;
+    let totalRatings = 0;
+    let positiveRatings = 0;
+    let topMatches = [];
+
+    for (const couple of couplesWithYou) {
+      totalRatings += couple.statistics.totalVotes;
+      positiveRatings += couple.statistics.yesVotes;
+      
+      // Calculate match percentage for this couple
+      const matchPercentage = couple.calculateMatchPercentage();
+      
+      // Get the other person in the couple
+      const otherPerson = couple.user1._id.equals(user._id) ? couple.user2 : couple.user1;
+      
+      topMatches.push({
+        person: otherPerson,
+        matchPercentage: matchPercentage,
+        totalVotes: couple.statistics.totalVotes
+      });
+    }
+
+    // Sort matches by percentage and get top 3
+    topMatches.sort((a, b) => b.matchPercentage - a.matchPercentage);
+    topMatches = topMatches.slice(0, 3);
+
+    // Add rating statistics
+    profileText += `📊 Your Match Statistics:\n`;
+    profileText += `Total times rated: ${totalRatings}\n`;
+    profileText += `Positive ratings: ${positiveRatings}\n`;
+    if (totalRatings > 0) {
+      const overallMatchRate = Math.round((positiveRatings / totalRatings) * 100);
+      profileText += `Overall match rate: ${overallMatchRate}%\n`;
+    }
 
     await sendMessage(senderId, { text: profileText });
 
-    // Find top rated couples user has voted on
-    const votedCouples = await Couple.find({
-      'votes.userId': senderId,
-      'statistics.totalVotes': { $gt: 0 }
-    })
-    .populate('user1 user2')
-    .sort({ 'statistics.matchPercentage': -1 })
-    .limit(3);
-
-    if (votedCouples.length > 0) {
+    // Show top potential matches if any exist
+    if (topMatches.length > 0) {
       await sendMessage(senderId, {
-        text: "🏆 Top Rated Couples You've Voted On:"
+        text: "🌟 Your Top Potential Matches:"
       });
 
-      for (const couple of votedCouples) {
-        const userVote = couple.votes.find(v => v.userId === senderId)?.vote || 'unknown';
-        const message = `${couple.user1.name} & ${couple.user2.name}\n` +
-                       `Match Rating: ${couple.statistics.matchPercentage}%\n` +
-                       `Total Votes: ${couple.statistics.totalVotes}\n` +
-                       `Your Vote: ${userVote.toUpperCase()}`;
-        
-        await sendMessage(senderId, { text: message });
+      for (const match of topMatches) {
+        // Show match details
+        await sendMessage(senderId, {
+          text: `Match with ${match.person.name}\n` +
+                `Match Rating: ${match.matchPercentage}%\n` +
+                `Based on ${match.totalVotes} votes`
+        });
 
-        // Show couple photos
+        // Show match photo
         await sendMessage(senderId, {
           attachment: {
-            type: "template",
+            type: "image",
             payload: {
-              template_type: "generic",
-              elements: [
-                {
-                  title: couple.user1.name,
-                  image_url: couple.user1.photo,
-                  subtitle: "Potential Match"
-                },
-                {
-                  title: couple.user2.name,
-                  image_url: couple.user2.photo,
-                  subtitle: "Potential Match"
-                }
-              ]
+              url: match.person.photo
             }
           }
         });
@@ -774,6 +803,11 @@ async function showUserProfile(senderId) {
           content_type: "text",
           title: "Rate Couples 💘",
           payload: "START_RATING"
+        },
+        {
+          content_type: "text",
+          title: "Update Profile 📝",
+          payload: "UPDATE_PROFILE"
         },
         {
           content_type: "text",
