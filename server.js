@@ -234,6 +234,29 @@ async function handleMessage(event) {
         user.currentMatchIndex = undefined;
       }
       await user.save();
+    } else if (message.text && message.text.toLowerCase() === '!createtest') {
+      // Create test profile
+      const testUser = await createTestProfile();
+      if (testUser) {
+        await sendMessage(senderId, {
+          text: `Created test profile: ${testUser.name} (${testUser.gender} looking for ${testUser.lookingFor})`
+        });
+        await sendMessage(senderId, {
+          attachment: {
+            type: "image",
+            payload: {
+              url: testUser.photo
+            }
+          }
+        });
+        await sendMessage(senderId, {
+          text: "Test profile created! Try viewing matches now by typing 'Yes'"
+        });
+      } else {
+        await sendMessage(senderId, {
+          text: "Sorry, there was an error creating the test profile."
+        });
+      }
     } else {
       // Handle other messages
       await sendMessage(senderId, {
@@ -351,6 +374,24 @@ async function showMatch(senderId, match) {
     });
   } catch (error) {
     console.error('Error showing match:', error);
+  }
+}
+
+// Create a test profile
+async function createTestProfile() {
+  try {
+    const testUser = new User({
+      facebookId: 'test_user_' + Date.now(),  // Unique ID based on timestamp
+      name: 'Sarah Test',
+      photo: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg',  // Free stock photo
+      gender: 'woman',
+      lookingFor: 'man'
+    });
+    await testUser.save();
+    return testUser;
+  } catch (error) {
+    console.error('Error creating test profile:', error);
+    return null;
   }
 }
 
