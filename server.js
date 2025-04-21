@@ -316,6 +316,10 @@ app.post('/webhook', (req, res) => {
 app.get('/setup', async (req, res) => {
   try {
     console.log('Starting Messenger profile setup...');
+    console.log('Using APP_ID:', process.env.APP_ID);
+    
+    const photoUrl = `https://www.facebook.com/dialog/photos?app_id=${process.env.APP_ID}&display=popup&redirect_uri=${encodeURIComponent(process.env.WEBHOOK_URL + '/photo-callback')}`;
+    console.log('Photo URL:', photoUrl);
     
     const menuConfig = {
       persistent_menu: [{
@@ -329,9 +333,9 @@ app.get('/setup', async (req, res) => {
           },
           {
             type: "web_url",
-            title: "Add Facebook Photo 📸",
-            url: "https://www.facebook.com/photos",
-            webview_height_ratio: "full"
+            title: "Choose Facebook Photo 📸",
+            url: photoUrl,
+            webview_height_ratio: "tall"
           },
           {
             type: "postback",
@@ -355,7 +359,7 @@ app.get('/setup', async (req, res) => {
       }
     };
 
-    console.log('Sending menu configuration:', JSON.stringify(menuConfig, null, 2));
+    console.log('Menu configuration:', JSON.stringify(menuConfig, null, 2));
 
     // Set up both persistent menu and get started button in one call
     await new Promise((resolve, reject) => {
@@ -1134,9 +1138,9 @@ async function showHelp(senderId) {
 // Update the photo request message
 async function requestProfilePhoto(senderId) {
   console.log('Requesting profile photo for user:', senderId);
-  const photoDialogUrl = `https://www.facebook.com/dialog/photos?app_id=${process.env.APP_ID}&display=popup&redirect_uri=${encodeURIComponent(process.env.WEBHOOK_URL + '/photo-callback')}`;
+  const photoUrl = `https://www.facebook.com/dialog/photos?app_id=${process.env.APP_ID}&display=popup&redirect_uri=${encodeURIComponent(process.env.WEBHOOK_URL + '/photo-callback')}`;
   
-  console.log('Photo dialog URL:', photoDialogUrl);
+  console.log('Photo dialog URL:', photoUrl);
   
   try {
     // First send the text message
@@ -1156,7 +1160,7 @@ async function requestProfilePhoto(senderId) {
             image_url: "https://images.pexels.com/photos/1337825/pexels-photo-1337825.jpeg",
             buttons: [{
               type: "web_url",
-              url: photoDialogUrl,
+              url: photoUrl,
               title: "Choose from Facebook",
               webview_height_ratio: "tall",
               messenger_extensions: false
