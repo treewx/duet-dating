@@ -42,7 +42,8 @@ const userSchema = new mongoose.Schema({
   lookingFor: String,  // "male" or "female"
   createdAt: { type: Date, default: Date.now },
   currentMatches: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  currentMatchIndex: Number
+  currentMatchIndex: Number,
+  currentCoupleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Couple' }
 });
 
 const coupleSchema = new mongoose.Schema({
@@ -187,25 +188,39 @@ async function handleMessage(event) {
           text: 'Please reply with either "man" or "woman"'
         });
       }
-    } else if (message.text && message.text.toLowerCase() === 'yes') {
-      // Show potential matches
-      const potentialMatches = await findPotentialMatches(user);
-      
-      if (potentialMatches.length === 0) {
+    } else if (message.text && message.text.toLowerCase() === '!createtest') {
+      // Create test profiles
+      const testProfiles = await createTestProfiles();
+      if (testProfiles) {
         await sendMessage(senderId, {
-          text: "We don't have any matches for you right now. Check back soon!"
+          text: `Created ${testProfiles.length} test profiles and generated couples for rating!`
+        });
+        await sendMessage(senderId, {
+          text: "Would you like to rate some couples? (Type 'Yes')"
         });
       } else {
-        // Show the first match
         await sendMessage(senderId, {
-          text: "Here are some potential matches! Let's look at them one by one."
+          text: "Sorry, there was an error creating the test profiles."
         });
-        await showMatch(senderId, potentialMatches[0]);
-        
-        // Store matches in user document for reference
-        user.currentMatches = potentialMatches.map(match => match._id);
-        user.currentMatchIndex = 0;
-        await user.save();
+      }
+    } else if (message.text && message.text.toLowerCase() === 'yes') {
+      // Show a couple to rate
+      await showCoupleToRate(senderId);
+    } else if (message.text && ['yes', 'no'].includes(message.text.toLowerCase())) {
+      // Handle rating
+      const user = await User.findOne({ facebookId: senderId });
+      if (user.currentCoupleId) {
+        const couple = await Couple.findById(user.currentCoupleId);
+        if (couple) {
+          couple.totalVotes += 1;
+          if (message.text.toLowerCase() === 'yes') {
+            couple.positiveVotes += 1;
+          }
+          await couple.save();
+          
+          // Show next couple
+          await showCoupleToRate(senderId);
+        }
       }
     } else if (message.text && ['like', 'pass'].includes(message.text.toLowerCase())) {
       // Handle voting on current match
@@ -234,29 +249,6 @@ async function handleMessage(event) {
         user.currentMatchIndex = undefined;
       }
       await user.save();
-    } else if (message.text && message.text.toLowerCase() === '!createtest') {
-      // Create test profile
-      const testUser = await createTestProfile();
-      if (testUser) {
-        await sendMessage(senderId, {
-          text: `Created test profile: ${testUser.name} (${testUser.gender} looking for ${testUser.lookingFor})`
-        });
-        await sendMessage(senderId, {
-          attachment: {
-            type: "image",
-            payload: {
-              url: testUser.photo
-            }
-          }
-        });
-        await sendMessage(senderId, {
-          text: "Test profile created! Try viewing matches now by typing 'Yes'"
-        });
-      } else {
-        await sendMessage(senderId, {
-          text: "Sorry, there was an error creating the test profile."
-        });
-      }
     } else {
       // Handle other messages
       await sendMessage(senderId, {
@@ -377,21 +369,133 @@ async function showMatch(senderId, match) {
   }
 }
 
-// Create a test profile
-async function createTestProfile() {
+// Create multiple test profiles
+async function createTestProfiles() {
   try {
-    const testUser = new User({
-      facebookId: 'test_user_' + Date.now(),  // Unique ID based on timestamp
-      name: 'Sarah Test',
-      photo: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg',  // Free stock photo
-      gender: 'woman',
-      lookingFor: 'man'
-    });
-    await testUser.save();
-    return testUser;
+    const testProfiles = [
+      {
+        name: 'Sarah Johnson',
+        photo: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Emily Davis',
+        photo: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Jessica Wilson',
+        photo: 'https://images.pexels.com/photos/1065084/pexels-photo-1065084.jpeg',
+        gender: 'woman'
+      },
+      {
+        name: 'Michael Brown',
+        photo: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'David Miller',
+        photo: 'https://images.pexels.com/photos/1516680/pexels-photo-1516680.jpeg',
+        gender: 'man'
+      },
+      {
+        name: 'James Wilson',
+        photo: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg',
+        gender: 'man'
+      }
+    ];
+
+    const createdProfiles = [];
+    for (const profile of testProfiles) {
+      const testUser = new User({
+        facebookId: 'test_user_' + profile.name.replace(/\s/g, '_').toLowerCase() + '_' + Date.now(),
+        name: profile.name,
+        photo: profile.photo,
+        gender: profile.gender,
+        lookingFor: profile.gender === 'man' ? 'woman' : 'man'
+      });
+      await testUser.save();
+      createdProfiles.push(testUser);
+    }
+
+    // Create some initial couples for rating
+    const men = createdProfiles.filter(p => p.gender === 'man');
+    const women = createdProfiles.filter(p => p.gender === 'woman');
+    
+    for (let i = 0; i < men.length; i++) {
+      for (let j = 0; j < women.length; j++) {
+        const couple = new Couple({
+          user1: men[i]._id,
+          user2: women[j]._id,
+          totalVotes: 0,
+          positiveVotes: 0
+        });
+        await couple.save();
+      }
+    }
+
+    return createdProfiles;
   } catch (error) {
-    console.error('Error creating test profile:', error);
+    console.error('Error creating test profiles:', error);
     return null;
+  }
+}
+
+// Show a couple to rate
+async function showCoupleToRate(senderId) {
+  try {
+    // Find a random couple that hasn't been rated much
+    const couple = await Couple.findOne({
+      totalVotes: { $lt: 10 } // Less than 10 votes
+    }).populate('user1').populate('user2');
+
+    if (!couple) {
+      await sendMessage(senderId, {
+        text: "No couples to rate right now. Check back later!"
+      });
+      return;
+    }
+
+    // Show the couple's photos side by side (we'll use separate messages for now)
+    await sendMessage(senderId, {
+      text: `Rate this potential couple!\n${couple.user1.name} & ${couple.user2.name}`
+    });
+
+    // Send first person's photo
+    await sendMessage(senderId, {
+      attachment: {
+        type: "image",
+        payload: {
+          url: couple.user1.photo
+        }
+      }
+    });
+
+    // Send second person's photo
+    await sendMessage(senderId, {
+      attachment: {
+        type: "image",
+        payload: {
+          url: couple.user2.photo
+        }
+      }
+    });
+
+    // Ask for rating
+    await sendMessage(senderId, {
+      text: "Do you think they would make a cute couple? (Type 'Yes' or 'No')"
+    });
+
+    // Store the current couple ID in the user's session
+    const user = await User.findOne({ facebookId: senderId });
+    user.currentCoupleId = couple._id;
+    await user.save();
+
+  } catch (error) {
+    console.error('Error showing couple:', error);
+    await sendMessage(senderId, {
+      text: "Sorry, there was an error showing the couple. Please try again."
+    });
   }
 }
 
