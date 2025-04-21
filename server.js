@@ -723,9 +723,13 @@ async function showCoupleToRate(senderId) {
     // Calculate current match percentage
     const matchPercentage = populatedCouple.calculateMatchPercentage();
 
+    // Get first names only
+    const user1FirstName = populatedCouple.user1.name.split(' ')[0];
+    const user2FirstName = populatedCouple.user2.name.split(' ')[0];
+
     // Send intro message with stats
     await sendMessage(senderId, {
-      text: `Rate this potential couple!\n${populatedCouple.user1.name} & ${populatedCouple.user2.name}\n\nCurrent Match Rating: ${matchPercentage}%\nTotal Votes: ${populatedCouple.statistics.totalVotes}`
+      text: `Rate this potential couple!\n${user1FirstName} & ${user2FirstName}\n\nCurrent Match Rating: ${matchPercentage}%\nTotal Votes: ${populatedCouple.statistics.totalVotes}`
     });
 
     // Send photos
