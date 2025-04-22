@@ -1316,7 +1316,7 @@ async function showUserProfile(senderId) {
       for (const match of topMatches) {
         // Show match details
         await sendMessage(senderId, {
-          text: `Match with ${match.person.name}\n` +
+          text: `Match with ${match.person.name.split(' ')[0]}\n` +
                 `Match Rating: ${match.matchPercentage}%\n` +
                 `Based on ${match.totalVotes} votes`
         });
