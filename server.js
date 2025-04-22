@@ -831,50 +831,48 @@ async function showCoupleToRate(senderId) {
 
       // Upload the image to Facebook first
       console.log('Uploading combined image to Facebook...');
-      const form = new FormData();
-      form.append('message', JSON.stringify({
-        attachment: {
-          type: "image",
-          payload: {
-            is_reusable: true
-          }
-        }
-      }));
-      form.append('filedata', combinedImageBuffer, {
-        filename: 'combined_image.jpg',
-        contentType: 'image/jpeg'
-      });
-
       const uploadResponse = await new Promise((resolve, reject) => {
-        form.submit({
-          protocol: 'https:',
-          host: 'graph.facebook.com',
-          path: `/v18.0/me/message_attachments?access_token=${process.env.PAGE_ACCESS_TOKEN}`,
-          method: 'POST'
-        }, (err, res) => {
-          if (err) {
-            console.error('Error uploading to Facebook:', err);
-            reject(err);
-            return;
+        const formData = {
+          message: JSON.stringify({
+            attachment: {
+              type: "image",
+              payload: {
+                is_reusable: true
+              }
+            }
+          }),
+          filedata: {
+            value: combinedImageBuffer,
+            options: {
+              filename: 'combined_image.jpg',
+              contentType: 'image/jpeg'
+            }
           }
+        };
 
-          const chunks = [];
-          res.on('data', chunk => chunks.push(chunk));
-          res.on('end', () => {
+        request.post({
+          url: 'https://graph.facebook.com/v18.0/me/message_attachments',
+          formData: formData,
+          qs: { access_token: process.env.PAGE_ACCESS_TOKEN }
+        }, (error, response, body) => {
+          if (error) {
+            console.error('Error uploading to Facebook:', error);
+            reject(error);
+          } else {
             try {
-              const response = JSON.parse(Buffer.concat(chunks).toString());
-              if (response.error) {
-                console.error('Facebook API error:', response.error);
-                reject(new Error(response.error.message));
+              const parsedBody = JSON.parse(body);
+              if (parsedBody.error) {
+                console.error('Facebook API error:', parsedBody.error);
+                reject(new Error(parsedBody.error.message));
               } else {
-                console.log('Upload response:', response);
-                resolve(response);
+                console.log('Upload response:', parsedBody);
+                resolve(parsedBody);
               }
             } catch (parseError) {
               console.error('Error parsing response:', parseError);
               reject(parseError);
             }
-          });
+          }
         });
       });
 
