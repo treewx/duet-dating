@@ -330,23 +330,12 @@ app.get('/setup', async (req, res) => {
     const menuConfig = {
       get_started: {
         payload: "GET_STARTED"
-      },
-      persistent_menu: [{
-        locale: "default",
-        composer_input_disabled: false,
-        call_to_actions: [
-          {
-            type: "postback",
-            title: "Help ❓",
-            payload: "SHOW_HELP"
-          }
-        ]
-      }]
+      }
     };
 
     console.log('Menu configuration:', JSON.stringify(menuConfig, null, 2));
 
-    // First, remove any existing menu and settings
+    // Remove any existing menu and settings
     await new Promise((resolve, reject) => {
       request({
         url: 'https://graph.facebook.com/v18.0/me/messenger_profile',
@@ -366,7 +355,7 @@ app.get('/setup', async (req, res) => {
       });
     });
 
-    // Then set up the Get Started button and minimal menu
+    // Set up only the Get Started button
     await new Promise((resolve, reject) => {
       request({
         url: 'https://graph.facebook.com/v18.0/me/messenger_profile',
@@ -563,79 +552,13 @@ async function handleMessage(event) {
       const lookingFor = message.quick_reply.payload === 'LOOKING_MAN' ? 'man' : 'woman';
       user.lookingFor = lookingFor;
       await user.save();
-
-      // Enable persistent menu after profile completion
-      const photoUrl = `https://www.facebook.com/dialog/photos?app_id=${process.env.APP_ID}&display=popup&redirect_uri=${encodeURIComponent(process.env.WEBHOOK_URL + '/photo-callback')}`;
-      
-      await new Promise((resolve, reject) => {
-        request({
-          url: 'https://graph.facebook.com/v18.0/me/messenger_profile',
-          qs: { access_token: process.env.PAGE_ACCESS_TOKEN },
-          method: 'POST',
-          json: {
-            persistent_menu: [{
-              locale: "default",
-              composer_input_disabled: false,
-              call_to_actions: [
-                {
-                  type: "postback",
-                  title: "Rate Couples 💘",
-                  payload: "START_RATING"
-                },
-                {
-                  type: "web_url",
-                  title: "Choose Facebook Photo 📸",
-                  url: photoUrl,
-                  webview_height_ratio: "tall"
-                },
-                {
-                  type: "postback",
-                  title: "Update Profile 📝",
-                  payload: "UPDATE_PROFILE"
-                },
-                {
-                  type: "postback",
-                  title: "View Profile 👤",
-                  payload: "VIEW_PROFILE"
-                },
-                {
-                  type: "postback",
-                  title: "Help ❓",
-                  payload: "SHOW_HELP"
-                }
-              ]
-            }]
-          }
-        }, (error, response, body) => {
-          if (error) {
-            console.error('Error setting up persistent menu:', error);
-            reject(error);
-          } else if (body.error) {
-            console.error('Facebook API error:', body.error);
-            reject(new Error(body.error.message));
-          } else {
-            console.log('Persistent menu enabled after profile completion');
-            resolve(body);
-          }
-        });
-      });
       
       // Profile complete message
       await sendMessage(senderId, {
-        text: "Perfect! Your profile is complete. Would you like to start rating couples?",
-        quick_replies: [
-          {
-            content_type: "text",
-            title: "Start Rating 💘",
-            payload: "START_RATING"
-          },
-          {
-            content_type: "text",
-            title: "View Profile 👤",
-            payload: "VIEW_PROFILE"
-          }
-        ]
+        text: "Perfect! Your profile is complete. Type 'menu' anytime to see available options."
       });
+      
+      await showMenuOptions(senderId);
     } else if (message.quick_reply) {
       switch (message.quick_reply.payload) {
         case 'START_RATING':
@@ -651,6 +574,8 @@ async function handleMessage(event) {
           await handleVote(senderId, vote);
           break;
       }
+    } else if (message.text && message.text.toLowerCase() === 'menu') {
+      await showMenuOptions(senderId);
     }
   } catch (error) {
     console.error('Error handling message:', error);
@@ -1396,26 +1321,7 @@ async function showUserProfile(senderId) {
     }
 
     // Show quick actions
-    await sendMessage(senderId, {
-      text: "What would you like to do?",
-      quick_replies: [
-        {
-          content_type: "text",
-          title: "Rate Couples 💘",
-          payload: "START_RATING"
-        },
-        {
-          content_type: "text",
-          title: "Update Profile 📝",
-          payload: "UPDATE_PROFILE"
-        },
-        {
-          content_type: "text",
-          title: "Help ❓",
-          payload: "SHOW_HELP"
-        }
-      ]
-    });
+    await showMenuOptions(senderId);
 
   } catch (error) {
     console.error('Error showing profile:', error);
@@ -1482,4 +1388,33 @@ async function requestProfilePhoto(senderId) {
   } catch (error) {
     console.error('Error sending photo request:', error);
   }
+}
+
+// Add a new function to show menu options
+async function showMenuOptions(senderId) {
+  await sendMessage(senderId, {
+    text: "What would you like to do?",
+    quick_replies: [
+      {
+        content_type: "text",
+        title: "Rate Couples 💘",
+        payload: "START_RATING"
+      },
+      {
+        content_type: "text",
+        title: "View Profile 👤",
+        payload: "VIEW_PROFILE"
+      },
+      {
+        content_type: "text",
+        title: "Update Photo 📸",
+        payload: "UPDATE_PROFILE"
+      },
+      {
+        content_type: "text",
+        title: "Help ❓",
+        payload: "SHOW_HELP"
+      }
+    ]
+  });
 } 
