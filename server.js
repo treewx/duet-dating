@@ -330,7 +330,18 @@ app.get('/setup', async (req, res) => {
     const menuConfig = {
       get_started: {
         payload: "GET_STARTED"
-      }
+      },
+      persistent_menu: [{
+        locale: "default",
+        composer_input_disabled: false,
+        call_to_actions: [
+          {
+            type: "postback",
+            title: "Help ❓",
+            payload: "SHOW_HELP"
+          }
+        ]
+      }]
     };
 
     console.log('Menu configuration:', JSON.stringify(menuConfig, null, 2));
@@ -355,7 +366,7 @@ app.get('/setup', async (req, res) => {
       });
     });
 
-    // Then set up only the Get Started button
+    // Then set up the Get Started button and minimal menu
     await new Promise((resolve, reject) => {
       request({
         url: 'https://graph.facebook.com/v18.0/me/messenger_profile',
