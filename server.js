@@ -1411,6 +1411,11 @@ async function requestProfilePhoto(senderId) {
       }
     });
     
+    // Send follow-up instruction for direct upload
+    await sendMessage(senderId, {
+      text: "Or simply send a photo directly in this chat! 📸"
+    });
+    
     console.log('Successfully sent photo request messages');
   } catch (error) {
     console.error('Error sending photo request:', error);
