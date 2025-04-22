@@ -1382,14 +1382,11 @@ async function showHelp(senderId) {
 // Update the photo request message
 async function requestProfilePhoto(senderId) {
   console.log('Requesting profile photo for user:', senderId);
-  const photoUrl = `https://www.facebook.com/dialog/photos?app_id=${process.env.APP_ID}&display=popup&redirect_uri=${encodeURIComponent(process.env.WEBHOOK_URL + '/photo-callback')}`;
-  
-  console.log('Photo dialog URL:', photoUrl);
   
   try {
     // First send the text message
     await sendMessage(senderId, {
-      text: "Let's add a photo to your profile! You can either:"
+      text: "Let's add a photo to your profile!"
     });
     
     // Then send the button template
@@ -1400,23 +1397,18 @@ async function requestProfilePhoto(senderId) {
           template_type: "generic",
           elements: [{
             title: "Choose Your Profile Photo",
-            subtitle: "Select a photo from Facebook or send one directly in chat",
+            subtitle: "Copy and Paste into chat a photo from your Facebook album",
             image_url: "https://images.pexels.com/photos/1337825/pexels-photo-1337825.jpeg",
             buttons: [{
               type: "web_url",
-              url: photoUrl,
-              title: "Choose from Facebook",
+              url: "https://www.facebook.com/photos",
+              title: "Open Facebook Photos",
               webview_height_ratio: "tall",
               messenger_extensions: false
             }]
           }]
         }
       }
-    });
-    
-    // Send follow-up instruction
-    await sendMessage(senderId, {
-      text: "Or simply send a photo directly in this chat! 📸"
     });
     
     console.log('Successfully sent photo request messages');
