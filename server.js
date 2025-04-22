@@ -251,6 +251,9 @@ app.post('/webhook', (req, res) => {
                 await sendMessage(senderId, {
                   text: `Welcome to Duet Dating! Let's set up your profile.`
                 });
+                await sendMessage(senderId, {
+                  text: `While our community grows, we've added AI profiles to keep it fun!`
+                });
                 await requestProfilePhoto(senderId);
                 break;
                 
@@ -438,8 +441,12 @@ async function handleMessage(event) {
             await user.save();
           }
           await sendMessage(senderId, {
-            text: `Welcome to Duet Dating! Please send us a photo of yourself. Make sure it's a clear photo of just you!`
+            text: `Welcome to Duet Dating! Let's set up your profile.`
           });
+          await sendMessage(senderId, {
+            text: `While our community grows, we've added AI profiles to keep it fun!`
+          });
+          await requestProfilePhoto(senderId);
           break;
       }
       return;
@@ -487,6 +494,9 @@ async function handleMessage(event) {
       
       await sendMessage(senderId, {
         text: `Welcome to Duet Dating, ${userProfile.first_name}!`
+      });
+      await sendMessage(senderId, {
+        text: `While our community grows, we've added AI profiles to keep it fun!`
       });
       await requestProfilePhoto(senderId);
     } else if (!user.photo && message.attachments && message.attachments[0].type === 'image') {
@@ -808,16 +818,13 @@ async function showCoupleToRate(senderId) {
       return;
     }
 
-    // Calculate current match percentage
-    const matchPercentage = populatedCouple.calculateMatchPercentage();
-
     // Get first names only
     const user1FirstName = populatedCouple.user1.name.split(' ')[0];
     const user2FirstName = populatedCouple.user2.name.split(' ')[0];
 
     // Send intro message with stats
     await sendMessage(senderId, {
-      text: `Rate this potential couple!\n${user1FirstName} & ${user2FirstName}\n\nCurrent Match Rating: ${matchPercentage}%\nTotal Votes: ${populatedCouple.statistics.totalVotes}`
+      text: `Rate this potential couple!\n${user1FirstName} & ${user2FirstName}`
     });
 
     try {
