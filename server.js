@@ -328,71 +328,34 @@ app.get('/setup', async (req, res) => {
     console.log('Photo URL:', photoUrl);
     
     const menuConfig = {
-      persistent_menu: [{
-        locale: "default",
-        composer_input_disabled: false,
-        call_to_actions: [
-          {
-            type: "postback",
-            title: "Rate Couples 💘",
-            payload: "START_RATING"
-          },
-          {
-            type: "web_url",
-            title: "Choose Facebook Photo 📸",
-            url: photoUrl,
-            webview_height_ratio: "tall"
-          },
-          {
-            type: "postback",
-            title: "Update Profile 📝",
-            payload: "UPDATE_PROFILE"
-          },
-          {
-            type: "postback",
-            title: "View Profile 👤",
-            payload: "VIEW_PROFILE"
-          },
-          {
-            type: "postback",
-            title: "Help ❓",
-            payload: "SHOW_HELP"
-          }
-        ]
-      }],
       get_started: {
         payload: "GET_STARTED"
-      },
-      home_url: {
-        url: process.env.WEBHOOK_URL,
-        webview_height_ratio: "tall",
-        in_test: false
       }
     };
 
     console.log('Menu configuration:', JSON.stringify(menuConfig, null, 2));
 
-    // First, remove any existing menu
+    // First, remove any existing menu and settings
     await new Promise((resolve, reject) => {
       request({
         url: 'https://graph.facebook.com/v18.0/me/messenger_profile',
         qs: { access_token: process.env.PAGE_ACCESS_TOKEN },
         method: 'DELETE',
         json: {
-          fields: ['persistent_menu']
+          fields: ['persistent_menu', 'get_started']
         }
       }, (error, response, body) => {
         if (error) {
           console.error('Error removing existing menu:', error);
           reject(error);
         } else {
-          console.log('Removed existing menu');
+          console.log('Removed existing menu and settings');
           resolve(body);
         }
       });
     });
 
-    // Then set up the new configuration
+    // Then set up only the Get Started button
     await new Promise((resolve, reject) => {
       request({
         url: 'https://graph.facebook.com/v18.0/me/messenger_profile',
@@ -589,8 +552,10 @@ async function handleMessage(event) {
       const lookingFor = message.quick_reply.payload === 'LOOKING_MAN' ? 'man' : 'woman';
       user.lookingFor = lookingFor;
       await user.save();
-      
+
       // Enable persistent menu after profile completion
+      const photoUrl = `https://www.facebook.com/dialog/photos?app_id=${process.env.APP_ID}&display=popup&redirect_uri=${encodeURIComponent(process.env.WEBHOOK_URL + '/photo-callback')}`;
+      
       await new Promise((resolve, reject) => {
         request({
           url: 'https://graph.facebook.com/v18.0/me/messenger_profile',
@@ -609,7 +574,7 @@ async function handleMessage(event) {
                 {
                   type: "web_url",
                   title: "Choose Facebook Photo 📸",
-                  url: `https://www.facebook.com/dialog/photos?app_id=${process.env.APP_ID}&display=popup&redirect_uri=${encodeURIComponent(process.env.WEBHOOK_URL + '/photo-callback')}`,
+                  url: photoUrl,
                   webview_height_ratio: "tall"
                 },
                 {
@@ -634,8 +599,11 @@ async function handleMessage(event) {
           if (error) {
             console.error('Error setting up persistent menu:', error);
             reject(error);
+          } else if (body.error) {
+            console.error('Facebook API error:', body.error);
+            reject(new Error(body.error.message));
           } else {
-            console.log('Persistent menu enabled');
+            console.log('Persistent menu enabled after profile completion');
             resolve(body);
           }
         });
