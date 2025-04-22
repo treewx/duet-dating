@@ -698,42 +698,65 @@ async function showMatch(senderId, match) {
 
 // Function to download image from URL
 function downloadImage(url) {
+  console.log('Attempting to download image from:', url);
   return new Promise((resolve, reject) => {
     https.get(url, (response) => {
+      console.log('Image download response status:', response.statusCode);
       const chunks = [];
       response.on('data', (chunk) => chunks.push(chunk));
-      response.on('end', () => resolve(Buffer.concat(chunks)));
-      response.on('error', reject);
-    }).on('error', reject);
+      response.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        console.log('Successfully downloaded image, size:', buffer.length, 'bytes');
+        resolve(buffer);
+      });
+      response.on('error', (err) => {
+        console.error('Error downloading image:', err);
+        reject(err);
+      });
+    }).on('error', (err) => {
+      console.error('Error making HTTPS request:', err);
+      reject(err);
+    });
   });
 }
 
 // Function to combine two images side by side
 async function combineImages(image1Url, image2Url) {
   try {
+    console.log('Starting image combination process');
+    console.log('Image 1 URL:', image1Url);
+    console.log('Image 2 URL:', image2Url);
+
     // Download both images
+    console.log('Downloading images...');
     const [image1Buffer, image2Buffer] = await Promise.all([
       downloadImage(image1Url),
       downloadImage(image2Url)
     ]);
+    console.log('Both images downloaded successfully');
 
     // Process first image to 400x400
+    console.log('Processing first image...');
     const image1 = await sharp(image1Buffer)
       .resize(400, 400, {
         fit: 'cover',
         position: 'center'
       })
       .toBuffer();
+    console.log('First image processed');
 
     // Process second image to 400x400
+    console.log('Processing second image...');
     const image2 = await sharp(image2Buffer)
       .resize(400, 400, {
         fit: 'cover',
         position: 'center'
       })
       .toBuffer();
+    console.log('Second image processed');
 
     // Combine images side by side
+    console.log('Combining images...');
     const combinedImage = await sharp({
       create: {
         width: 800,
@@ -748,10 +771,12 @@ async function combineImages(image1Url, image2Url) {
     ])
     .jpeg()
     .toBuffer();
+    console.log('Images combined successfully');
 
     return combinedImage;
   } catch (error) {
-    console.error('Error combining images:', error);
+    console.error('Error in combineImages:', error);
+    console.error('Error stack:', error.stack);
     throw error;
   }
 }
@@ -795,28 +820,62 @@ async function showCoupleToRate(senderId) {
     });
 
     try {
+      console.log('Starting couple image processing');
       // Combine the images
       const combinedImageBuffer = await combineImages(
         populatedCouple.user1.photo,
         populatedCouple.user2.photo
       );
+      console.log('Successfully created combined image buffer');
 
-      // Convert buffer to base64
-      const base64Image = combinedImageBuffer.toString('base64');
+      // Upload the image to Facebook first
+      console.log('Uploading combined image to Facebook...');
+      const uploadResponse = await new Promise((resolve, reject) => {
+        request({
+          url: 'https://graph.facebook.com/v18.0/me/message_attachments',
+          qs: { access_token: process.env.PAGE_ACCESS_TOKEN },
+          method: 'POST',
+          json: {
+            message: {
+              attachment: {
+                type: "image",
+                payload: {
+                  is_reusable: true
+                }
+              }
+            },
+            filedata: combinedImageBuffer
+          }
+        }, (error, response, body) => {
+          if (error) {
+            console.error('Error uploading to Facebook:', error);
+            reject(error);
+          } else if (body.error) {
+            console.error('Facebook API error:', body.error);
+            reject(new Error(body.error.message));
+          } else {
+            console.log('Upload response:', body);
+            resolve(body);
+          }
+        });
+      });
 
-      // Send the combined image
+      // Send the combined image using the attachment ID
       await sendMessage(senderId, {
         attachment: {
           type: "image",
           payload: {
-            is_reusable: true,
-            attachment_id: base64Image
+            attachment_id: uploadResponse.attachment_id
           }
         }
       });
+      console.log('Successfully sent combined image');
+
     } catch (imageError) {
-      console.error('Error processing images:', imageError);
+      console.error('Error in image processing/sending:', imageError);
+      console.error('Error stack:', imageError.stack);
       // Fallback to sending images separately if combination fails
+      console.log('Falling back to separate images');
       await sendMessage(senderId, {
         attachment: {
           type: "image",
